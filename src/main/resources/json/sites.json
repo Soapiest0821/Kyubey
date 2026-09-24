@@ -1,0 +1,26 @@
+{
+  "구글": {
+    "home": "https://www.google.com",
+    "search": "https://www.google.com/search?q="
+  },
+  "네이버": {
+    "home": "https://www.naver.com",
+    "search": "https://search.naver.com/search.naver?query="
+  },
+  "유튜브": {
+    "home": "https://www.youtube.com",
+    "search": "https://www.youtube.com/results?search_query="
+  },
+  "깃허브": {
+    "home": "https://github.com",
+    "search": "https://github.com/search?q="
+  },
+  "쿼라": {
+    "home": "https://www.quora.com",
+    "search": "https://www.quora.com/search?q="
+  },
+  "나무위키": {
+    "home": "https://namu.wiki",
+    "search": "https://namu.wiki/w/%s"
+  }
+}
