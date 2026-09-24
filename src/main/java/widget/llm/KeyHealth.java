@@ -1,6 +1,7 @@
 package widget.llm;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.File;
@@ -13,7 +14,7 @@ import java.util.HexFormat;
 import java.util.Map;
 
 /**
- * 키마다 마지막으로 던져본 결과 — keys 창에서 🟢🟡🔴 로 보여준다.
+ * 키마다 마지막으로 던져본 결과 — keys 창에서 🟢🟡🔴⚫ 로 보여준다.
  *
  * WIZ_ 번호가 아니라 키 값에 붙여서 기억한다. keys 창에서 중간 키를 지우면 번호가
  * 당겨지는데, 번호에 붙여두면 남의 상태가 딴 키 옆에 뜨게 된다.
@@ -29,10 +30,12 @@ public final class KeyHealth {
   public enum State {
     /** 마지막에 답을 받았다 */
     OK("🟢"),
-    /** 한도가 찼거나 구글 쪽이 잠깐 아팠다 — 기다리면 돌아온다 */
-    BUSY("🟡"),
+    /** 구글 쪽이 잠깐 아팠다 — 금방 돌아온다 */
+    ERROR("🟡"),
+    /** 한도가 찼다 — 한도가 풀릴 때까지 기다려야 돌아온다 */
+    LIMIT("🔴"),
     /** 키가 틀렸거나 막혔다 — 기다려도 안 돌아온다 */
-    DEAD("🔴");
+    DEAD("⚫");
 
     private final String light;
 
@@ -49,7 +52,12 @@ public final class KeyHealth {
   public record Status(State state, String reason, long at) {
   }
 
-  private static final ObjectMapper mapper = new ObjectMapper();
+  /** 파일에서 읽을 땐 색깔은 버리고 reason 에서 다시 정한다 — 색 나누는 법이 바뀌어도 옛 파일이 안 깨지게 */
+  private record Saved(String reason, long at) {
+  }
+
+  private static final ObjectMapper mapper = new ObjectMapper()
+      .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
   private static Map<String, Status> byHash;
 
   private KeyHealth() {
@@ -62,13 +70,20 @@ public final class KeyHealth {
 
   /** 이 키가 이 이유로 실패했다. 키 탓이 아닌 이유면 적지 않고 넘어간다 */
   static void failed(String key, String reason) {
-    State state = switch (reason) {
-      case "한도 초과", "서버 오류", "응답 없음" -> State.BUSY;
+    State state = stateOf(reason);
+    if (state != null)
+      put(key, new Status(state, reason, System.currentTimeMillis()));
+  }
+
+  /** 한글 키워드 → 불 색깔. 키 탓이 아닌 이유면 null */
+  private static State stateOf(String reason) {
+    return switch (reason) {
+      case "성공" -> State.OK;
+      case "서버 오류", "응답 없음" -> State.ERROR;
+      case "한도 초과" -> State.LIMIT;
       case "키 무효", "인증 실패", "권한 없음" -> State.DEAD;
       default -> null;
     };
-    if (state != null)
-      put(key, new Status(state, reason, System.currentTimeMillis()));
   }
 
   /** 마지막 결과. 이 키로 아직 한 번도 안 던져봤으면 null */
@@ -96,8 +111,13 @@ public final class KeyHealth {
     File file = new File(PATH);
     if (file.exists()) {
       try {
-        byHash.putAll(mapper.readValue(file, new TypeReference<Map<String, Status>>() {
-        }));
+        Map<String, Saved> saved = mapper.readValue(file, new TypeReference<Map<String, Saved>>() {
+        });
+        saved.forEach((hash, entry) -> {
+          State state = entry.reason() == null ? null : stateOf(entry.reason());
+          if (state != null)
+            byHash.put(hash, new Status(state, entry.reason(), entry.at()));
+        });
       } catch (IOException e) {
         // 깨졌으면 다들 "안 써봄" 으로 시작한다
         e.printStackTrace();

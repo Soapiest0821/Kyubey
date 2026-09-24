@@ -157,6 +157,13 @@
     -fx-font-size: 14px;
 }
 
+/* keys 창 — 칸을 누르기 전엔 키 글자를 투명하게 */
+.dialog-textfield:masked {
+    -fx-text-fill: transparent;
+    -fx-highlight-fill: transparent;
+    -fx-highlight-text-fill: transparent;
+}
+
 .keys-link {
     -fx-text-fill: #b32b5e;
     -fx-underline: true;

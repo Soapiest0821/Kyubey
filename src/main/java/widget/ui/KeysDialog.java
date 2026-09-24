@@ -4,6 +4,7 @@ import widget.llm.GeminiClient;
 import widget.llm.KeyHealth;
 import widget.llm.LlmClient;
 
+import javafx.css.PseudoClass;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
@@ -33,8 +34,9 @@ import java.util.List;
  * "keys" 로 뜨는 창 — .env 의 WIZ_ 키를 넣고 빼고 고친다.
  *
  * 줄마다 그 키로 마지막에 던져본 결과가 불로 붙는다 (KeyHealth):
- * 🟢 답 받음 · 🟡 한도 초과/서버 오류 · 🔴 못 쓰는 키 · ⚪ 아직 안 써봄.
+ * 🟢 성공 · 🟡 서버 오류 · 🔴 한도 초과 · ⚫ 못 쓰는 키 · ⚪ 아직 안 써봄.
  * 불은 키 값에 붙어 있어서, 칸을 고치면 그 자리에서 새 키의 불로 바뀐다.
+ * 키 값은 칸을 눌러 들어가기 전까진 안 보이게 둔다 — 화면 공유나 어깨 너머로 새지 않게.
  *
  * 저장하면 WIZ_1 부터 번호를 새로 매겨 .env 에 적고 (빈칸·겹치는 키는 빠진다),
  * 클라이언트가 곧장 새로 읽는다. 딴 설정 줄은 그대로 둔다.
@@ -43,6 +45,8 @@ import java.util.List;
 public final class KeysDialog {
 
   private static final String KEY_PAGE = "https://aistudio.google.com/api-keys?hl=ko";
+  /** 가림막이 덮여 있는 칸 — 밑에 깔린 진짜 글자는 투명하게 */
+  private static final PseudoClass MASKED = PseudoClass.getPseudoClass("masked");
 
   private KeysDialog() {
   }
@@ -57,7 +61,7 @@ public final class KeysDialog {
     Label heading = new Label("🔑 Gemini 키");
     heading.getStyleClass().add("notice-title");
 
-    Label sub = new Label("위에서부터 WIZ_1, WIZ_2 … 로 .env 에 적혀. 🟢 성공 · 🟡 한도/서버 · 🔴 못 씀 · ⚪ 안 써봄"
+    Label sub = new Label("위에서부터 WIZ_1, WIZ_2 … 로 .env 에 적혀. 🟢 성공 · 🟡 서버 오류 · 🔴 한도 초과 · ⚫ 못 씀 · ⚪ 안 써봄"
         + "\nCtrl+Enter 저장 · Esc 취소");
     sub.getStyleClass().add("dialog-path-label");
     sub.setWrapText(true);
@@ -129,7 +133,7 @@ public final class KeysDialog {
     VBox root = new VBox(12, heading, sub, scroll, add, error, buttons);
     root.getStyleClass().add("dialog-root");
     root.setPadding(new Insets(22));
-    root.setPrefWidth(620);
+    root.setPrefWidth(520);
 
     Scene scene = new Scene(root);
     scene.setFill(Color.TRANSPARENT);
@@ -148,15 +152,14 @@ public final class KeysDialog {
     WindowDrag.makeDraggable(dialog, root);
     dialog.setOnShown(e -> {
       centerOn(dialog, owner);
-      // 비어 있는 칸이 있으면 거기로, 아니면 맨 위 칸으로
-      TextField first = fieldOf(rows.getChildren().get(0));
+      // 비어 있는 칸이 있으면 거기로. 다 차 있으면 아무 칸에도 안 들어간다 — 들어가면 키가 드러나니까
       for (var node : rows.getChildren()) {
         if (fieldOf(node).getText().isBlank()) {
-          first = fieldOf(node);
-          break;
+          fieldOf(node).requestFocus();
+          return;
         }
       }
-      first.requestFocus();
+      root.requestFocus();
     });
     dialog.showAndWait();
     return saved[0];
@@ -174,7 +177,11 @@ public final class KeysDialog {
     TextField field = new TextField(key);
     field.getStyleClass().add("dialog-textfield");
     field.setPromptText("AIza… 붙여넣기");
+
     HBox.setHgrow(field, Priority.ALWAYS);
+    // 칸을 누르기 전엔 글자를 투명하게 — 누르면 들어가면서 드러난다
+    Runnable cover = () -> field.pseudoClassStateChanged(MASKED, !field.isFocused());
+    field.focusedProperty().addListener((obs, was, now) -> cover.run());
 
     Label state = new Label();
     state.getStyleClass().add("dialog-path-label");
@@ -193,6 +200,7 @@ public final class KeysDialog {
     Runnable refresh = () -> paint(field.getText(), light, state, tip);
     field.textProperty().addListener((obs, was, now) -> refresh.run());
     refresh.run();
+    cover.run();
 
     remove.setOnAction(e -> {
       rows.getChildren().remove(row);
