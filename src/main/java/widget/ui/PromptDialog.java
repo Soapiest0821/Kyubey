@@ -18,11 +18,12 @@ import javafx.stage.StageStyle;
 import javafx.stage.Window;
 
 /**
- * "채팅 프롬프트" / "대화 프롬프트" 로 뜨는 창 — 마도카한테 입혀주는 성격문을 고쳐 쓴다.
+ * "채팅 프롬프트" / "대화 프롬프트" 로 뜨는 창 — 마도카한테 입혀주는 성격문과,
+ * 뜸할 때 먼저 말을 걸라고 끼워 넣는 안내문을 고쳐 쓴다.
  *
- * 지금 쓰고 있는 성격문을 채워서 연다. 여러 줄이라 Enter 는 줄바꿈이고,
- * 저장은 Ctrl+Enter 나 단추로, 취소는 Esc. "기본값" 은 칸만 기본 성격문으로 되돌려놓고
- * 저장은 안 한다 — 눌러보고 마음이 바뀌면 그냥 Esc 로 나가면 되게.
+ * 둘 다 지금 쓰고 있는 것을 채워서 연다. 여러 줄이라 Enter 는 줄바꿈이고,
+ * 저장은 Ctrl+Enter 나 단추로, 취소는 Esc. 칸마다 붙은 "기본값" 은 그 칸만 기본 문구로
+ * 되돌려놓고 저장은 안 한다 — 눌러보고 마음이 바뀌면 그냥 Esc 로 나가면 되게.
  *
  * 접어둔 기억(memo)은 여기 안 보인다. 그건 성격문 뒤에 알아서 따라붙는다 (ChatPane.persona).
  */
@@ -45,25 +46,23 @@ public final class PromptDialog {
     sub.getStyleClass().add("dialog-path-label");
     sub.setWrapText(true);
 
-    TextArea area = new TextArea(chat.prompt());
-    area.getStyleClass().addAll("dialog-textfield", "prompt-area");
-    area.setWrapText(true);
-    area.setPrefColumnCount(40);
-    area.setPrefRowCount(16);
+    TextArea area = area(chat.prompt(), 12);
+    TextArea nudge = area(chat.nudgeGuide(), 10);
 
     boolean[] saved = { false };
     Runnable save = () -> {
       chat.setPrompt(area.getText());
+      chat.setNudgeGuide(nudge.getText());
       saved[0] = true;
       dialog.close();
     };
 
-    Button reset = new Button("기본값");
-    reset.getStyleClass().add("dialog-button");
-    reset.setOnAction(e -> {
-      area.setText(ChatPane.PERSONA);
-      area.requestFocus();
-    });
+    Label nudgeHint = new Label("[이름] 줄이 칸을 가른다 · {상황} {지난시간} {읽은시간} 자리는 알아서 채워져");
+    nudgeHint.getStyleClass().add("dialog-path-label");
+    nudgeHint.setWrapText(true);
+
+    VBox personaBox = section("성격문", area, ChatPane.PERSONA, null);
+    VBox nudgeBox = section("먼저 말 걸 때 안내문", nudge, ChatPane.NUDGE, nudgeHint);
 
     Button cancel = new Button("취소");
     cancel.getStyleClass().add("dialog-button");
@@ -73,12 +72,10 @@ public final class PromptDialog {
     ok.getStyleClass().add("dialog-button-primary");
     ok.setOnAction(e -> save.run());
 
-    Region spacer = new Region();
-    HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-    HBox buttons = new HBox(8, reset, spacer, cancel, ok);
+    HBox buttons = new HBox(8, cancel, ok);
     buttons.setAlignment(Pos.CENTER_RIGHT);
 
-    VBox root = new VBox(12, heading, sub, area, buttons);
+    VBox root = new VBox(12, heading, sub, personaBox, nudgeBox, buttons);
     root.getStyleClass().add("dialog-root");
     root.setPadding(new Insets(22));
     root.setPrefWidth(520);
@@ -107,6 +104,39 @@ public final class PromptDialog {
     });
     dialog.showAndWait();
     return saved[0];
+  }
+
+  private static TextArea area(String text, int rows) {
+    TextArea area = new TextArea(text);
+    area.getStyleClass().addAll("dialog-textfield", "prompt-area");
+    area.setWrapText(true);
+    area.setPrefColumnCount(40);
+    area.setPrefRowCount(rows);
+    return area;
+  }
+
+  /** 칸 이름 + 그 칸만 되돌리는 "기본값" 단추 한 줄, 그 아래 (있으면) 안내, 그 아래 입력칸 */
+  private static VBox section(String name, TextArea area, String fallback, Label hint) {
+    Label title = new Label(name);
+    title.getStyleClass().add("dialog-path-label");
+
+    Button reset = new Button("기본값");
+    reset.getStyleClass().add("dialog-button");
+    reset.setOnAction(e -> {
+      area.setText(fallback);
+      area.requestFocus();
+    });
+
+    Region spacer = new Region();
+    HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
+    HBox head = new HBox(8, title, spacer, reset);
+    head.setAlignment(Pos.CENTER_LEFT);
+
+    VBox box = new VBox(6, head);
+    if (hint != null)
+      box.getChildren().add(hint);
+    box.getChildren().add(area);
+    return box;
   }
 
   /** 띄운 쪽 창 한가운데로 (Notice 와 같은 이치) */

@@ -6,6 +6,7 @@ import widget.core.ChatHistory;
 import widget.core.ChatPrompt;
 import widget.core.HistoryManager;
 import widget.core.MacroManager;
+import widget.core.Presence;
 import widget.core.SearchResult;
 import widget.core.Settings;
 import widget.core.WorkingMemory;
@@ -265,7 +266,11 @@ public class Main extends Application {
         new ChatHistory("src/main/resources/json/chat.json"),
         new WorkingMemory("src/main/resources/json/memo.json"),
         new ChatPrompt("src/main/resources/json/prompt.json"),
+        new Presence("src/main/resources/json/presence.json"),
         this::showHome, this::showUnread);
+    // 언제 들렀는지 ChatPane 이 센다. 한참 뜸했으면 수다 화면에 안 들어와도 창을 부르는 것만으로
+    // 마도카가 먼저 말을 건다 (배지로 뜬다)
+    stage.focusedProperty().addListener((obs, was, is) -> chatPane.widgetFocused(is));
 
     inputField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
       String text = inputField.getText();

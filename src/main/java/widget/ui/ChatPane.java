@@ -2,6 +2,7 @@ package widget.ui;
 
 import widget.core.ChatHistory;
 import widget.core.ChatPrompt;
+import widget.core.Presence;
 import widget.core.WorkingMemory;
 import widget.llm.LlmClient;
 import widget.voice.Dictation;
@@ -27,8 +28,11 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.IntConsumer;
 
 /**
@@ -69,9 +73,14 @@ import java.util.function.IntConsumer;
  *
  * 한참 조용하다 다시 들어오면 마도카가 먼저 말을 건다. 포커스를 받은 자리에서 마지막으로 오간
  * 말이 NUDGE_AFTER_MS 보다 오래됐으면, 내가 아무것도 안 쳤는데 답을 한 번 받아다 올린다 —
- * maybeNudge 와 nudgePrompt 참고. 먼저 건 말에 내가 답을 안 하고 나가버려도 하던 얘기는
+ * maybeNudge 와 nudgePrompt 참고. 수다 화면에 안 들어와도 위젯 창이 포커스만 받으면 똑같이 걸리고,
+ * 그렇게 건 말은 안 읽은 말로 배지에 뜬다 (widgetFocused). 먼저 건 말에 내가 답을 안 하고 나가버려도 하던 얘기는
  * 그대로 둔다. 그 말도 대화의 한 줄로 남아서, 또 그만큼 조용하면 같은 맥락 위에서 한 번 더
  * 건다 — 같은 인사를 처음부터 다시 하는 게 아니라 "아까 말 걸었는데 답이 없네" 가 되게.
+ *
+ * 말을 걸기 전에 내가 마지막 줄까지 읽었는지(언제 읽었는지)를 본다 — Presence 가 껐다 켜도
+ * 들고 있다. 읽었으면 "읽고 답 안 함", 아니면 "아직 못 봄" 으로 안내를 갈라 주고, 읽었을 땐
+ * 걸 말의 시각을 지난번에 들른 때와 지금 사이 아무 때로 물려 찍는다 (nudge, backdate).
  */
 public class ChatPane extends BorderPane {
 
@@ -92,6 +101,43 @@ public class ChatPane extends BorderPane {
       - 모르는 건 아는 척하지 말고 모른다고 해.
       - 뭘 부탁하면 도와주고, 그냥 수다면 같이 수다 떨어줘.
       """;
+
+  /**
+   * 뜸할 때 먼저 말을 걸라고 끼워 넣는 안내문의 기본값. "채팅 프롬프트" 로 고쳐 쓴 게 있으면
+   * 그쪽이 대신 간다 (customNudge 참고).
+   *
+   * [이름] 한 줄이 칸을 가른다. [공통] 이 늘 가는 틀이고, {상황} 자리에 나머지 셋 중 하나가
+   * 끼워진다 — 마지막 말이 누구 것이었는지, 마도카 말이면 내가 읽었는지에 따라 (nudgePrompt).
+   * {지난시간} 은 마지막으로 말이 오간 뒤로 지난 시간, {읽은시간} 은 내가 읽은 뒤로 지난 시간이다.
+   * 고쳐 쓰다 칸 하나를 지웠거나 비워뒀으면 그 칸만 기본값으로 채운다.
+   */
+  public static final String NUDGE = """
+      [공통]
+      (이건 상대가 친 말이 아니라 위젯이 끼워 넣은 안내야. 이 괄호 안 얘기는 절대 입 밖에 내지 마.)
+      마지막으로 말이 오간 지 {지난시간}쯤 됐어. 상대가 지금 화면을 보고 있는지는 몰라.
+      {상황}
+      지금까지 나눈 얘기는 그대로 기억한 채로, 오랜만이라는 티만 자연스럽게 내면서
+      네가 먼저 한마디 건네줘. 무슨 일 있었냐고 캐묻지는 말고 가볍게.
+
+      [답 못 한 채 끊김]
+      상대가 마지막으로 한 말에 네가 아직 답을 못 했어. 늦었지만 그 말부터 받아주면서 말을 걸어.
+
+      [읽고 답 없음]
+      네가 마지막으로 건 말을 상대는 {읽은시간} 전에 읽었는데 아직 답이 없어.
+      읽고 답을 안 한 거라 살짝 서운한 티는 내도 되지만 따지거나 탓하지는 마.
+      아까 한 말을 그대로 되풀이하지 말고, 결을 바꿔서 한 번 더 걸어봐.
+
+      [안 읽음]
+      네가 마지막으로 건 말을 상대는 아직 안 읽었어. 바빠서 못 본 걸 수도 있으니 답을 재촉하지는 마.
+      아까 한 말을 그대로 되풀이하지 말고, 가볍게 한마디만 더 얹어.
+      """;
+
+  /** 안내문을 가르는 칸 이름. NUDGE 의 [이름] 과 같아야 한다 */
+  private static final String COMMON = "공통";
+  private static final String CUT_OFF = "답 못 한 채 끊김";
+  private static final String READ_NO_REPLY = "읽고 답 없음";
+  private static final String UNREAD = "안 읽음";
+  private static final List<String> SECTIONS = List.of(COMMON, CUT_OFF, READ_NO_REPLY, UNREAD);
 
   /**
    * 모델한테 원문 그대로 들려줄 최근 대화 길이 — 티키타카 네 번 분.
@@ -181,10 +227,18 @@ public class ChatPane extends BorderPane {
    */
   private static final long NUDGE_AFTER_MS = 5 * 60 * 60 * 1000L;
 
+  /**
+   * 창 포커스가 이만큼 안에 나갔다 도로 들어오면 들른 게 아니라 같은 방문으로 친다.
+   * 창을 앞으로 끌어올 때(Main 의 bringToFront) 포커스가 잠깐씩 튀어서, 그걸 들를 때마다
+   * 찍으면 "지난번에 들른 때" 가 방금 전이 돼버린다 (backdate 참고).
+   */
+  private static final long FOCUS_BOUNCE_MS = 2000;
+
   private final LlmClient llm;
   private final ChatHistory store;
   private final WorkingMemory memory;
   private final ChatPrompt prompt;
+  private final Presence presence;
   private final Runnable onExit;
 
   /** 안 읽은 마도카 말이 몇 개인지 알려줄 곳. Main 이 마도카 그림 옆에 배지로 띄운다 */
@@ -203,6 +257,9 @@ public class ChatPane extends BorderPane {
 
   /** 손으로 고쳐 쓴 성격문. 비었으면 기본값(PERSONA)이 간다 */
   private String customPersona = "";
+
+  /** 손으로 고쳐 쓴 안내문. 비었으면 기본값(NUDGE)이 간다 */
+  private String customNudge = "";
 
   /** 이 시각까지 오간 말은 memo 에 들어갔다. 껐다 켜도 같은 대화를 또 요약하지 않게 */
   private long foldedUpTo;
@@ -237,12 +294,25 @@ public class ChatPane extends BorderPane {
    */
   private int era;
 
+  /** 수다 화면을 마지막으로 보고 있던 때. 마지막 줄보다 뒤면 다 읽은 것이다 (readAll) */
+  private long readAt;
+
+  /** 위젯 창이 마지막으로 포커스를 받은 때 — 지금 들른 것까지 포함한다 */
+  private long focusAt;
+
+  /** 지금 들르기 바로 전에 포커스를 받은 때. 먼저 건 말의 시각을 이 뒤로 물린다 (backdate) */
+  private long prevFocusAt;
+
+  /** 창 포커스가 마지막으로 나간 때. 잠깐 튄 포커스를 걸러낼 때만 본다 (FOCUS_BOUNCE_MS) */
+  private long blurAt;
+
   public ChatPane(LlmClient llm, ChatHistory store, WorkingMemory memory, ChatPrompt prompt,
-      Runnable onExit, IntConsumer onUnread) {
+      Presence presence, Runnable onExit, IntConsumer onUnread) {
     this.llm = llm;
     this.store = store;
     this.memory = memory;
     this.prompt = prompt;
+    this.presence = presence;
     this.onExit = onExit;
     this.onUnread = onUnread;
 
@@ -284,9 +354,14 @@ public class ChatPane extends BorderPane {
     input.addEventFilter(KeyEvent.KEY_PRESSED, this::handleKey);
     // 창을 다시 부르거나 마도카를 눌러 들어오면 여기로 걸린다 (Ime.focus 가 포커스를 뗐다 붙인다).
     // 실패한 말을 다시 던지는 것도, 뜸해졌을 때 먼저 말을 거는 것도 이 신호 하나에서 갈린다.
+    // 입력칸에 포커스가 있는 동안이 곧 이 화면을 보고 있는 동안이라, 나갈 때 읽은 때로 찍는다 —
+    // 나가는 순간까지 눈앞에 있던 말은 다 읽은 셈이니까. 들어올 때 안 찍는 건, 들어오는 자리에서
+    // 마도카가 먼저 말을 걸지 고를 때 "들어오기 전에 다 읽었었나" 를 봐야 해서다 (nudge).
     input.focusedProperty().addListener((obs, was, is) -> {
       if (is)
         onFocus();
+      else if (leftScreen())
+        markRead();
     });
 
     // 빈 입력칸에서 스페이스를 누르고 있으면 받아쓰기 (Dictation 주석 참고).
@@ -314,7 +389,14 @@ public class ChatPane extends BorderPane {
     WorkingMemory.Snapshot saved = memory.load();
     memo = saved.memo;
     foldedUpTo = saved.foldedUpTo;
-    customPersona = prompt.load();
+    ChatPrompt.Snapshot written = prompt.load();
+    customPersona = written.persona;
+    customNudge = written.nudge;
+
+    Presence.Snapshot seen = presence.load();
+    readAt = seen.readAt;
+    focusAt = seen.focusAt;
+    prevFocusAt = focusAt;
 
     // 하던 얘기가 있으면 인사는 건너뛴다. 이어 말하는 자리에 "왔구나!" 가 끼면 처음 보는 사이 같아서.
     greeted = !lines.isEmpty();
@@ -337,6 +419,54 @@ public class ChatPane extends BorderPane {
   /** 포커스를 줄 곳. 창을 다시 띄울 때 Main 이 여기로 돌려준다 */
   public TextField input() {
     return input;
+  }
+
+  /**
+   * 위젯 창 포커스가 들어오고 나갈 때마다 Main 이 부른다 — 수다 화면에 안 들어와 있어도.
+   *
+   * 들어올 때는 두 가지를 한다. 먼저 "언제 들렀나" 를 한 칸 밀어둔다 — 방금 전 들른 때가
+   * prevFocusAt 으로 내려가서, 마도카가 먼저 건 말의 시각을 그 뒤로 물릴 때 쓴다 (backdate).
+   * 그다음 뜸해졌는지 본다. 기본 화면만 열었다 닫는 날에도 마도카가 먼저 말을 걸게 하려는 것이고,
+   * 화면 밖에서 올라온 말이라 그대로 안 읽은 말이 되어 그림 옆에 배지가 뜬다 (addLine 참고).
+   *
+   * 수다 화면을 보고 있을 땐 입력칸이 포커스를 받으면서 onFocus 가 알아서 하니까 뜸한지는 안 본다.
+   * 나갔다 FOCUS_BOUNCE_MS 안에 도로 들어온 건 창을 끌어오다 튄 것이라 들른 걸로 안 친다.
+   */
+  public void widgetFocused(boolean focused) {
+    long now = System.currentTimeMillis();
+    if (!focused) {
+      blurAt = now;
+      return;
+    }
+    if (blurAt > 0 && now - blurAt < FOCUS_BOUNCE_MS)
+      return;
+
+    prevFocusAt = focusAt;
+    focusAt = now;
+    presence.save(readAt, focusAt);
+
+    if (!reading())
+      maybeNudge();
+  }
+
+  /** 지금 이 화면을 보고 있다고 찍어둔다. 여기까지 붙은 말은 다 읽은 것이 된다 */
+  private void markRead() {
+    readAt = System.currentTimeMillis();
+    presence.save(readAt, focusAt);
+  }
+
+  /**
+   * 입력칸이 포커스를 잃은 게 정말로 이 화면을 떠난 건지. 창이 포커스를 잃었거나 화면에서 떨어져
+   * 나갔으면 떠난 것이다. 창은 그대로인데 잃은 건 Ime.focus 가 포커스를 잠깐 뗐다 붙인 것이라,
+   * 그걸 읽은 때로 찍으면 창을 다시 부를 때마다 "방금 다 읽음" 이 돼버린다.
+   */
+  private boolean leftScreen() {
+    return getScene() == null || getScene().getWindow() == null || !getScene().getWindow().isFocused();
+  }
+
+  /** 마지막 줄까지 다 읽었는지 — 수다 화면을 마지막으로 본 때가 마지막 줄보다 뒤인지 */
+  private boolean readAll() {
+    return lines.isEmpty() || readAt >= lines.get(lines.size() - 1).at;
   }
 
   /** 마도카를 눌러서 이 화면으로 들어올 때 */
@@ -400,15 +530,33 @@ public class ChatPane extends BorderPane {
    * 다음 답변부터 바로 먹는다. 대화나 접어둔 기억은 안 건드린다.
    */
   public void setPrompt(String text) {
+    customPersona = customized(text, PERSONA);
+    prompt.save(customPersona, customNudge);
+  }
+
+  /** 지금 쓰는 안내문 — 고쳐 쓴 게 없으면 기본값. "채팅 프롬프트" 창이 이걸 채워서 연다 */
+  public String nudgeGuide() {
+    return customNudge.isBlank() ? NUDGE : customNudge;
+  }
+
+  /** 안내문을 갈아끼운다. 다음에 먼저 말을 걸 때부터 먹는다 (setPrompt 와 같은 규칙) */
+  public void setNudgeGuide(String text) {
+    customNudge = customized(text, NUDGE);
+    prompt.save(customPersona, customNudge);
+  }
+
+  /** 고쳐 쓴 글에서 남겨둘 몫. 비었거나 기본값과 같으면 "" — 고친 게 없는 것으로 친다 */
+  private static String customized(String text, String fallback) {
     String trimmed = text == null ? "" : text.strip();
-    customPersona = trimmed.equals(PERSONA.strip()) ? "" : trimmed;
-    prompt.save(customPersona);
+    return trimmed.equals(fallback.strip()) ? "" : trimmed;
   }
 
   /** Esc: 수다 화면을 접고 기본 화면으로. 포커스가 이 화면 안 어디에 있든 같다 */
   private void handleExit(KeyEvent e) {
     if (e.getCode() == KeyCode.ESCAPE) {
       e.consume();
+      // 기본 화면이 포커스를 먼저 가져가면 창은 그대로라 leftScreen 에 안 걸린다 — 나가는 자리에서 직접 찍는다
+      markRead();
       onExit.run();
     }
   }
@@ -424,6 +572,7 @@ public class ChatPane extends BorderPane {
     // 친 게 있을 땐 ← 가 평소대로 캐럿 옮기기 — 그땐 Alt 를 같이 눌러야 나간다 (Main 과 같은 규칙).
     if (e.getCode() == KeyCode.LEFT && (e.isAltDown() || input.getText().isEmpty())) {
       e.consume();
+      markRead();
       onExit.run();
     }
   }
@@ -452,7 +601,9 @@ public class ChatPane extends BorderPane {
       retryPending();
       return;
     }
-    maybeNudge();
+    // 창이 포커스를 받는 자리에선 입력칸이 창보다 먼저 불릴 때가 있다. 한 박자 미뤄서
+    // widgetFocused 가 "지난번에 들른 때" 를 먼저 밀어두게 한다 (backdate 가 그걸 본다).
+    Platform.runLater(this::maybeNudge);
   }
 
   /** 답을 못 받고 남은 말이 있으면 다시 던진다. 없으면 아무 일도 안 일어난다 */
@@ -468,14 +619,17 @@ public class ChatPane extends BorderPane {
   private void ask() {
     if (lines.isEmpty())
       return;
-    request(window());
+    request(window(), 0);
   }
 
   /**
    * 마도카한테 넘기고 답을 말풍선으로 올리는 자리. 내 말에 답하는 것(ask)도, 뜸해져서
    * 먼저 말을 거는 것(nudge)도 결국 여기로 모인다 — 건네는 목록만 다르고 나머지는 같다.
+   *
+   * earlierMs 만큼 말풍선에 찍히는 시각을 앞당긴다. 먼저 건 말을 내가 없던 사이에 보낸
+   * 것처럼 보이게 할 때만 쓰고 (backdate), 보통 답은 0 이다.
    */
-  private void request(List<LlmClient.Message> snapshot) {
+  private void request(List<LlmClient.Message> snapshot, long earlierMs) {
     if (asking || snapshot.isEmpty())
       return;
 
@@ -512,7 +666,7 @@ public class ChatPane extends BorderPane {
       pending = false;
       // asking 은 마지막 말풍선이 올라갈 때까지 켜둔다 — 마도카가 아직 말하는 중에
       // 내 말이 끼어들면 주고받은 순서가 엉켜서.
-      say(bubbles, 0, startedIn);
+      say(bubbles, 0, startedIn, earlierMs);
     });
 
     task.setOnFailed(e -> {
@@ -551,7 +705,7 @@ public class ChatPane extends BorderPane {
     if (idle < NUDGE_AFTER_MS)
       return;
 
-    nudge(idle, last.mine);
+    nudge(last);
   }
 
   /**
@@ -563,11 +717,37 @@ public class ChatPane extends BorderPane {
    *
    * 안내는 chat.json 에 안 남긴다. 화면에 안 보이는 말이 기록에 끼면 다음번 window() 에
    * 딸려 들어가서, 조용하지도 않은데 "오랜만이야" 를 또 하게 된다.
+   *
+   * 여기서 내가 마지막 줄까지 읽었는지 본다. 읽었으면 걸 말의 시각을 내가 없던 사이로
+   * 물리고 (backdate), 안내에도 읽었는지·언제 읽었는지를 적어 넘긴다 (nudgePrompt).
    */
-  private void nudge(long idleMs, boolean lastWasMine) {
+  private void nudge(ChatHistory.Line last) {
+    long now = System.currentTimeMillis();
+    boolean read = readAll();
+    long sentAt = read ? backdate(last, now) : now;
+
     List<LlmClient.Message> snapshot = window();
-    snapshot.add(new LlmClient.Message(true, nudgePrompt(idleMs, lastWasMine)));
-    request(snapshot);
+    snapshot.add(new LlmClient.Message(true,
+        nudgePrompt(sentAt - last.at, last.mine, read ? sentAt - readAt : -1)));
+    request(snapshot, now - sentAt);
+  }
+
+  /**
+   * 먼저 건 말에 찍을 시각 — 내가 지난번에 들른 때와 지금 사이 아무 때나.
+   *
+   * 다 읽고 나간 뒤에 온 말이 "지금" 으로 찍히면 창을 부르자마자 말이 오는 꼴이라 지켜보고
+   * 있다가 튀어나온 것처럼 보인다. 내가 없던 사이 어느 때 보낸 걸로 찍어두면, 들어와 보니
+   * 그새 톡이 와 있는 모양이 된다.
+   *
+   * 아래 끝은 지난번에 들른 때(prevFocusAt)인데, 마지막 줄이나 마지막으로 읽은 때보다
+   * 앞으로는 안 간다 — 그보다 앞에 찍히면 순서가 꼬이거나, 읽었을 때 이미 있어야 했던 말이 된다.
+   * 물릴 틈이 없으면 그냥 지금이다.
+   */
+  private long backdate(ChatHistory.Line last, long now) {
+    long from = Math.max(last.at, Math.max(readAt, prevFocusAt)) + 1;
+    if (from >= now)
+      return now;
+    return ThreadLocalRandom.current().nextLong(from, now);
   }
 
   /**
@@ -577,20 +757,72 @@ public class ChatPane extends BorderPane {
    * 자리라 그 말부터 받아줘야 하고, 마도카 말이 마지막이면 먼저 걸었는데 내가 답을 안 한
    * 자리라 같은 말을 되풀이하면 안 된다 — 후자를 안 갈라주면 아까 한 인사를 글자 그대로
    * 다시 해서, 말을 건 게 아니라 고장 난 것처럼 보인다.
+   *
+   * 마도카 말이 마지막일 땐 그걸 내가 읽었는지도 알려준다 (readAgoMs, 안 읽었으면 음수).
+   * 읽고도 답이 없는 것과 아직 못 본 것은 건넬 말이 다르다 — 못 본 사람한테 "왜 답이 없어"
+   * 하면 억울하고, 읽은 사람한테 아무 일 없던 척 하면 눈치가 없어 보인다.
+   *
+   * 상대가 지금 화면을 보고 있다고는 안 적는다. 시각을 물려 찍은 말은 상대가 없던 사이에
+   * 보낸 말이라, "방금 들어왔네" 같은 말이 나오면 앞뒤가 안 맞는다.
+   *
+   * 문구는 안내문(NUDGE, 또는 고쳐 쓴 것)에서 칸별로 꺼내 빈자리만 채운다.
    */
-  private static String nudgePrompt(long idleMs, boolean lastWasMine) {
-    long hours = Math.max(1, idleMs / (60 * 60 * 1000L));
-    String situation = lastWasMine
-        ? "상대가 마지막으로 한 말에 네가 아직 답을 못 했어. 늦었지만 그 말부터 받아주면서 말을 걸어."
-        : "네가 마지막으로 건 말에 상대는 아직 답이 없어. 아까 한 말을 그대로 되풀이하지 말고, 결을 바꿔서 한 번 더 걸어봐.";
+  private String nudgePrompt(long idleMs, boolean lastWasMine, long readAgoMs) {
+    Map<String, String> guide = sections(nudgeGuide());
+    String situation = guide.get(lastWasMine ? CUT_OFF : readAgoMs >= 0 ? READ_NO_REPLY : UNREAD);
+    String readAgo = readAgoMs >= 0 ? ago(readAgoMs) : "";
 
-    return """
-        (이건 상대가 친 말이 아니라 위젯이 끼워 넣은 안내야. 이 괄호 안 얘기는 절대 입 밖에 내지 마.)
-        말이 오간 지 %d시간쯤 됐고, 방금 상대가 수다 화면을 다시 열었어.
-        %s
-        지금까지 나눈 얘기는 그대로 기억한 채로, 오랜만이라는 티만 자연스럽게 내면서
-        네가 먼저 한마디 건네줘. 무슨 일 있었냐고 캐묻지는 말고 가볍게.
-        """.formatted(hours, situation);
+    return guide.get(COMMON)
+        .replace("{상황}", situation)
+        .replace("{지난시간}", ago(idleMs))
+        .replace("{읽은시간}", readAgo);
+  }
+
+  /**
+   * 안내문을 [이름] 줄로 갈라 칸별로 담는다. 첫 [이름] 앞에 쓴 건 [공통] 에 붙는다 —
+   * 칸 표시를 다 지우고 한 덩어리로만 써도 그게 틀로 가게.
+   * 모르는 [이름] 은 칸을 가르지 않고 그냥 글로 친다. 비어 있는 칸은 기본값 칸으로 채운다.
+   */
+  private static Map<String, String> sections(String text) {
+    Map<String, String> out = parse(text);
+    Map<String, String> fallback = parse(NUDGE);
+    for (String name : SECTIONS) {
+      if (out.get(name).isEmpty())
+        out.put(name, fallback.get(name));
+    }
+    return out;
+  }
+
+  /** [이름] 줄로 가르기만 한다. 없는 칸은 빈 문자열 */
+  private static Map<String, String> parse(String text) {
+    Map<String, StringBuilder> found = new LinkedHashMap<>();
+    String current = COMMON;
+    for (String line : text.split("\n", -1)) {
+      String trimmed = line.strip();
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        String name = trimmed.substring(1, trimmed.length() - 1).strip();
+        if (SECTIONS.contains(name)) {
+          current = name;
+          continue;
+        }
+      }
+      found.computeIfAbsent(current, k -> new StringBuilder()).append(line).append("\n");
+    }
+
+    Map<String, String> out = new LinkedHashMap<>();
+    for (String name : SECTIONS) {
+      StringBuilder body = found.get(name);
+      out.put(name, body == null ? "" : body.toString().strip());
+    }
+    return out;
+  }
+
+  /** 안내에 적을 지난 시간. 한 시간이 안 되면 분으로 — "0시간" 이라고 적히지 않게 */
+  private static String ago(long ms) {
+    long minutes = Math.max(1, ms / (60 * 1000L));
+    if (minutes < 60)
+      return minutes + "분";
+    return (minutes / 60) + "시간";
   }
 
   /**
@@ -602,13 +834,16 @@ public class ChatPane extends BorderPane {
    *
    * 뜿 들이는 사이에 대화를 지울 수도 있어서, 출발할 때의 era 를 끝까지 들고 다닌다 —
    * 달라졌으면 남은 말풍선은 그냥 삼킨다.
+   *
+   * earlierMs 는 시각을 물려 찍을 만큼이다 (request 참고). 말풍선마다 같은 만큼 물려서
+   * 사이사이 뜸은 그대로 남는다.
    */
-  private void say(List<String> bubbles, int index, int startedIn) {
+  private void say(List<String> bubbles, int index, int startedIn, long earlierMs) {
     if (startedIn != era)
       return;
 
     hideWaiting();
-    addLine(bubbles.get(index), false);
+    addLine(bubbles.get(index), false, System.currentTimeMillis() - earlierMs);
 
     if (index + 1 >= bubbles.size()) {
       asking = false;
@@ -621,7 +856,7 @@ public class ChatPane extends BorderPane {
     String next = bubbles.get(index + 1);
     PauseTransition gap = new PauseTransition(Duration.millis(
         Math.min(GAP_MAX_MS, GAP_BASE_MS + next.length() * GAP_PER_CHAR_MS)));
-    gap.setOnFinished(e -> say(bubbles, index + 1, startedIn));
+    gap.setOnFinished(e -> say(bubbles, index + 1, startedIn, earlierMs));
     gap.play();
   }
 
@@ -651,9 +886,17 @@ public class ChatPane extends BorderPane {
 
   /** 오간 말 한 줄. 화면에 올리고 파일에 남긴다 */
   private void addLine(String text, boolean mine) {
-    lines.add(new ChatHistory.Line(mine, text, System.currentTimeMillis()));
+    addLine(text, mine, System.currentTimeMillis());
+  }
+
+  /** 시각을 정해서 남기는 한 줄. 먼저 건 말을 물려 찍을 때만 지금이 아닌 시각이 온다 (backdate) */
+  private void addLine(String text, boolean mine, long at) {
+    lines.add(new ChatHistory.Line(mine, text, at));
     store.save(lines);
     render();
+    // 눈앞에서 붙은 말은 붙자마자 읽은 셈이다
+    if (input.isFocused())
+      markRead();
     // 이 화면 밖에서 올라온 마도카 말은 아직 아무도 못 봤다 — 그림 옆에 표시를 띄워둔다
     if (!mine && !reading())
       setUnread(unread + 1);
