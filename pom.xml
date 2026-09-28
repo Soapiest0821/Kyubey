@@ -59,7 +59,7 @@
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>widget.Main</mainClass>
+                    <mainClass>kyubey.Main</mainClass>
                 </configuration>
             </plugin>
 
@@ -77,7 +77,7 @@
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>widget.Main</mainClass>
+                                    <mainClass>kyubey.Main</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>
