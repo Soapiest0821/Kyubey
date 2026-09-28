@@ -252,7 +252,7 @@ public class MarkdownView extends ScrollPane {
     flow.getChildren().add(node);
   }
 
-  static void openInBrowser(String url) {
+  public static void openInBrowser(String url) {
     try {
       if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE))
         Desktop.getDesktop().browse(new URI(url));

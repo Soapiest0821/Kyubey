@@ -1,8 +1,5 @@
-package kyubey.ui;
+package kyubey.share;
 
-import kyubey.share.Downloads;
-import kyubey.share.LanShare;
-import kyubey.share.Qr;
 
 import javafx.application.Platform;
 import javafx.collections.ListChangeListener;
@@ -29,6 +26,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import kyubey.ui.Notice;
+import kyubey.ui.WindowDrag;
 
 /**
  * "파일 송신" / "파일 수신" 으로 뜨는 창 — 같은 와이파이에 있는 폰이랑 파일을 주고받는다.

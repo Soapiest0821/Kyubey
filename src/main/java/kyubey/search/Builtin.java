@@ -1,4 +1,4 @@
-package kyubey.core;
+package kyubey.search;
 
 import java.util.ArrayList;
 import java.util.Arrays;

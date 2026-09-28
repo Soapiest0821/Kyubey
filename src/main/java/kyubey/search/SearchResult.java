@@ -1,4 +1,4 @@
-package kyubey.core;
+package kyubey.search;
 
 public class SearchResult {
   public enum Type {

@@ -1,6 +1,5 @@
-package kyubey.ui;
+package kyubey.search;
 
-import kyubey.core.MacroManager;
 import kyubey.index.AppMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,6 +37,9 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import kyubey.ui.Ime;
+import kyubey.ui.Notice;
+import kyubey.ui.WindowDrag;
 
 /**
  * "new" 치면 뜨는 등록 창 — 단축 키워드 하나에 파일/사이트/명령어 중 하나를 묶어준다.

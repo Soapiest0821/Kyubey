@@ -1,8 +1,5 @@
-package kyubey.ui;
+package kyubey.llm;
 
-import kyubey.llm.GeminiClient;
-import kyubey.llm.KeyHealth;
-import kyubey.llm.LlmClient;
 
 import javafx.css.PseudoClass;
 import javafx.geometry.Insets;
@@ -29,6 +26,8 @@ import javafx.stage.Window;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import kyubey.ui.MarkdownView;
+import kyubey.ui.WindowDrag;
 
 /**
  * "keys" 로 뜨는 창 — .env 의 WIZ_ 키를 넣고 빼고 고친다.

@@ -1,4 +1,4 @@
-package kyubey.ui;
+package kyubey.index;
 
 import kyubey.core.Settings;
 
@@ -26,6 +26,7 @@ import javafx.stage.Window;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import kyubey.ui.WindowDrag;
 
 /**
  * 처음 켰을 때 (settings.json 이 없을 때) 뜨는 창, 나중엔 "setup" 으로 다시 부른다.

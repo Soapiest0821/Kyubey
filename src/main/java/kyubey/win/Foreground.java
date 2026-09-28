@@ -1,4 +1,4 @@
-package kyubey.ui;
+package kyubey.win;
 
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;

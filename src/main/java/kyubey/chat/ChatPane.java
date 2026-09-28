@@ -1,10 +1,5 @@
-package kyubey.ui;
+package kyubey.chat;
 
-import kyubey.core.ChatArchive;
-import kyubey.core.ChatHistory;
-import kyubey.core.ChatPrompt;
-import kyubey.core.Presence;
-import kyubey.core.WorkingMemory;
 import kyubey.llm.LlmClient;
 import kyubey.voice.Dictation;
 import javafx.animation.PauseTransition;
@@ -35,6 +30,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.IntConsumer;
+import kyubey.ui.Ime;
 
 /**
  * 오른쪽 아래 마도카를 누르면 열리는 수다 화면.

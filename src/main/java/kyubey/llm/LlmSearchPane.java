@@ -1,6 +1,5 @@
-package kyubey.ui;
+package kyubey.llm;
 
-import kyubey.llm.LlmClient;
 import kyubey.voice.Dictation;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
@@ -18,6 +17,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import kyubey.ui.Ime;
+import kyubey.ui.MarkdownView;
 
 /**
  * 왼쪽 화살표로 들어오는 여러 줄 LLM 검색 모드.

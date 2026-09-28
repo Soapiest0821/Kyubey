@@ -1,4 +1,4 @@
-package kyubey.core;
+package kyubey.search;
 
 import kyubey.index.AppMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;

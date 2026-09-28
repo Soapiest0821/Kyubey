@@ -1,4 +1,4 @@
-package kyubey.core;
+package kyubey.chat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 

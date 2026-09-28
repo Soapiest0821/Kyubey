@@ -1,7 +1,5 @@
-package kyubey.ui;
+package kyubey.chat;
 
-import kyubey.core.ChatArchive;
-import kyubey.core.ChatHistory;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -29,6 +27,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import kyubey.ui.WindowDrag;
 
 /**
  * 수다 화면에서 마도카를 누르면 뜨는 창 — "채팅 삭제" 로 지운 지난 대화들을 꺼내 본다.

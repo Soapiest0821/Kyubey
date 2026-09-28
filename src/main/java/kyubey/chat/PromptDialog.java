@@ -1,4 +1,4 @@
-package kyubey.ui;
+package kyubey.chat;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -16,6 +16,8 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.stage.Window;
+import kyubey.ui.Ime;
+import kyubey.ui.WindowDrag;
 
 /**
  * "채팅 프롬프트" / "대화 프롬프트" 로 뜨는 창 — 마도카한테 입혀주는 성격문과,
