@@ -1,5 +1,6 @@
 package kyubey.ui;
 
+import kyubey.core.SettingsDialog;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.win32.StdCallLibrary;
@@ -95,7 +96,7 @@ public final class Toast {
 
     Scene scene = new Scene(root);
     scene.setFill(Color.TRANSPARENT);
-    scene.getStylesheets().add(Toast.class.getResource("/style/style.css").toExternalForm());
+    scene.getStylesheets().add(SettingsDialog.styleUrl());
 
     Stage stage = new Stage(StageStyle.TRANSPARENT);
     stage.setScene(scene);

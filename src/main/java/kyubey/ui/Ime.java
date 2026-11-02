@@ -1,5 +1,10 @@
 package kyubey.ui;
 
+import com.sun.jna.Native;
+import com.sun.jna.Pointer;
+import com.sun.jna.win32.StdCallLibrary;
+import com.sun.jna.win32.W32APIOptions;
+
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
@@ -48,5 +53,66 @@ public final class Ime {
       root.requestFocus();
 
     field.requestFocus();
+  }
+
+  /**
+   * areas 안에 포커스가 있는 동안 창에서 IME 를 뗀다 — 글자 칸이 아니라 N · T 같은 맨손 키를 쓰는 판(목표 맵)용.
+   *
+   * JavaFX 는 글자 칸이 아닌 데로 포커스가 가면 조합 글자를 안 받을 뿐, 윈도우 IME 는 그대로 켜 둔다.
+   * 그래서 한글 모드로 판을 누르고 N 을 치면 IME 가 'ㅜ' 로 조합해 먹어버려서 (따로 뜨는 IME 조합 창)
+   * 판엔 N 이 안 온다. 판에 있는 동안만 창과 IME 를 떼어 두고, 나가면 도로 붙인다.
+   * 한/영 상태는 IME 쪽에 남아 있어서 글자 칸으로 돌아가면 치던 모드 그대로다.
+   */
+  public static void shortcutsOnly(Node... areas) {
+    if (!System.getProperty("os.name", "").startsWith("Windows") || areas.length == 0)
+      return;
+    javafx.beans.value.ChangeListener<Object> update = (obs, was, is) -> apply(areas);
+    areas[0].sceneProperty().addListener((obs, was, scene) -> {
+      if (was != null)
+        was.focusOwnerProperty().removeListener(update);
+      if (scene != null)
+        scene.focusOwnerProperty().addListener(update);
+    });
+    if (areas[0].getScene() != null)
+      areas[0].getScene().focusOwnerProperty().addListener(update);
+    // stage.hide() 뒤 show() 는 OS 창이 새것이라 (맨 위 주석) 창이 앞에 올 때마다 다시 맞춘다. 대화창에서 돌아올 때도
+    areas[0].sceneProperty().flatMap(Scene::windowProperty).flatMap(javafx.stage.Window::focusedProperty)
+        .addListener(update);
+  }
+
+  /** 지금 포커스가 areas 안이면 IME 를 떼고, 아니면 붙인다. 창이 앞에 있을 때만 — 대화창 IME 를 건드리지 않게 */
+  private static void apply(Node[] areas) {
+    Scene scene = areas[0].getScene();
+    if (scene == null || scene.getWindow() == null || !scene.getWindow().isFocused())
+      return;
+    boolean inside = false;
+    for (Node at = scene.getFocusOwner(); at != null && !inside; at = at.getParent()) {
+      for (Node area : areas)
+        inside |= at == area;
+    }
+    try {
+      // FX 스레드가 곧 창 메시지를 돌리는 스레드라, 지금 앞에 있는 우리 창이 잡힌다
+      Pointer hwnd = Imm32.User32.INSTANCE.GetActiveWindow();
+      if (hwnd != null)
+        Imm32.INSTANCE.ImmAssociateContextEx(hwnd, null, inside ? 0 : Imm32.IACE_DEFAULT);
+    } catch (Throwable t) {
+      // JNA 가 안 올라오면 예전처럼 — 한글 모드에선 영문으로 바꿔 쳐야 할 뿐
+    }
+  }
+
+  /** IME 를 떼고 붙이는 데 필요한 것만 직접 맵핑한다 (Toast 와 같은 수법) */
+  private interface Imm32 extends StdCallLibrary {
+    Imm32 INSTANCE = Native.load("imm32", Imm32.class, W32APIOptions.DEFAULT_OPTIONS);
+
+    /** hIMC 없이 이걸 주면 창의 기본 IME 로 되돌린다. 0 이면 IME 를 뗀다 */
+    int IACE_DEFAULT = 0x10;
+
+    boolean ImmAssociateContextEx(Pointer hWnd, Pointer hIMC, int dwFlags);
+
+    interface User32 extends StdCallLibrary {
+      User32 INSTANCE = Native.load("user32", User32.class, W32APIOptions.DEFAULT_OPTIONS);
+
+      Pointer GetActiveWindow();
+    }
   }
 }

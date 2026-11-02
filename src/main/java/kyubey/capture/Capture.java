@@ -4,7 +4,13 @@ import kyubey.llm.LlmClient;
 import kyubey.ui.Notice;
 import kyubey.ui.Toast;
 
+import java.io.File;
+import java.util.Locale;
+import java.util.Set;
+
 import javafx.application.Platform;
+import javafx.scene.image.Image;
+import javafx.scene.input.Clipboard;
 
 /**
  * 화면 자르기 한 판의 진행을 맡는다 (Win+Alt+Z, 또는 "캡쳐" 명령어).
@@ -58,6 +64,54 @@ public final class Capture {
       ex.printStackTrace();
       Notice.warn(null, "화면을 못 찍었어\n\n" + ex);
     }
+  }
+
+  /** 렌즈로 넘길 만한 그림 파일 확장자 — 탐색기에서 파일째 복사한 경우 */
+  private static final Set<String> IMAGE_EXTS = Set.of("png", "jpg", "jpeg", "gif", "bmp", "webp");
+
+  /**
+   * 클립보드에 그림이 있으면 구글 렌즈로 보낸다 (입력창에서 Ctrl+V). JavaFX 스레드에서 부를 것.
+   *
+   * 글자가 같이 있으면 손대지 않는다 — 엑셀·워드는 글자를 복사해도 그림을 덤으로 얹어서,
+   * 그걸 렌즈로 보내버리면 평소 붙여넣기가 먹통이 된다.
+   *
+   * @return 그림이 있어서 렌즈로 보냈으면 true (부르는 쪽은 붙여넣기를 막는다)
+   */
+  public static boolean pasteToLens() {
+    Image image = clipboardImage();
+    if (image == null)
+      return false;
+    byte[] png;
+    try {
+      png = Png.encode(image);
+    } catch (Exception e) {
+      e.printStackTrace();
+      Notice.warn(null, "붙여넣은 그림을 옮겨 담다가 실패했어\n\n" + e.getMessage());
+      return true;
+    }
+    lens(png);
+    return true;
+  }
+
+  /** 클립보드의 그림 — 그림 자체든, 탐색기에서 복사한 그림 파일이든. 없으면 null */
+  private static Image clipboardImage() {
+    Clipboard clip = Clipboard.getSystemClipboard();
+    if (clip.hasString())
+      return null;
+    if (clip.hasImage())
+      return clip.getImage();
+    if (clip.hasFiles()) {
+      for (File file : clip.getFiles()) {
+        String name = file.getName().toLowerCase(Locale.ROOT);
+        int dot = name.lastIndexOf('.');
+        if (dot < 0 || !IMAGE_EXTS.contains(name.substring(dot + 1)))
+          continue;
+        Image image = new Image(file.toURI().toString());
+        if (!image.isError())
+          return image;
+      }
+    }
+    return null;
   }
 
   /** 잘라낸 걸 토글대로 처리한다 (JavaFX 스레드) */

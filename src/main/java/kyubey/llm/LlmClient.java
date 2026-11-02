@@ -85,4 +85,15 @@ public interface LlmClient {
     }
     throw new IllegalArgumentException("건넬 말이 하나도 없어");
   }
+
+  /**
+   * chat() 에 "대화에 나온 링크를 직접 열어 읽어도 된다" 를 얹은 것. readLinks 가 true 면
+   * 백엔드가 할 수 있는 한 http(s) 주소의 내용을 가져다 읽고 답한다 (Gemini 는 url_context 툴).
+   * 못 하는 백엔드는 그냥 chat() 으로 흘려보낸다 — 링크를 못 읽을 뿐 대화는 된다.
+   *
+   * @throws Exception ask() 와 같다
+   */
+  default String chat(String persona, List<Message> turns, Mode mode, boolean readLinks) throws Exception {
+    return chat(persona, turns, mode);
+  }
 }

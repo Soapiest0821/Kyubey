@@ -26,6 +26,9 @@ import javafx.stage.StageStyle;
 
 import java.util.function.Consumer;
 
+import kyubey.core.SettingsDialog;
+import kyubey.ui.Theme;
+
 /**
  * 화면을 찍어놓고 그 위에 덮는 자르기 판.
  *
@@ -48,11 +51,11 @@ final class Overlay {
   /** 안내판을 마우스에서 이만큼 떼어 오른쪽 아래에 세운다 (커서에 안 겹치게) */
   private static final double HINT_GAP = 20;
 
-  /** 고른 자리를 두르는 핑크 테두리 */
-  private static final Color CROSS = Color.web("#ff69a0");
+  /** 고른 자리를 두르는 테두리 — 위젯 테마의 진한 색 (핑크 테마면 핑크) */
+  private static final String CROSS = "#ff69a0";
 
-  /** 십자 커서 색 — 연한 핑크 */
-  private static final Color POINTER = Color.web("#ffb6c1");
+  /** 십자 커서 색 — 위젯 테마의 연한 색 (핑크 테마면 연한 핑크) */
+  private static final String POINTER = "255, 181, 217";
 
   /** 십자 커서 선 굵기 (픽셀) — 한 줄은 너무 가늘어서 두 줄로 긋는다 */
   private static final int POINTER_WIDTH = 2;
@@ -138,6 +141,7 @@ final class Overlay {
       Consumer<Shot> onDone, Runnable onCancel) {
     double width = area.getWidth();
     double height = area.getHeight();
+    Theme theme = SettingsDialog.theme();
 
     // 판이 뜨자마자 안내판이 제자리에 있게, 지금 마우스가 있는 데서 시작한다
     pointerX = mouseX - area.getMinX();
@@ -150,7 +154,7 @@ final class Overlay {
     Rectangle dim = new Rectangle(width, height, Color.rgb(0, 0, 0, 0.45));
 
     selection.setFill(Color.TRANSPARENT);
-    selection.setStroke(CROSS);
+    selection.setStroke(Color.web(theme.swap(CROSS)));
     selection.setStrokeWidth(1.5);
     selection.setVisible(false);
 
@@ -162,9 +166,9 @@ final class Overlay {
 
     Stage stage = new Stage(StageStyle.UNDECORATED);
     Scene scene = new Scene(root, width, height);
-    scene.setCursor(crosshair());
+    scene.setCursor(crosshair(Color.web("rgb(" + theme.swap(POINTER) + ")")));
     scene.setFill(Color.BLACK);
-    scene.getStylesheets().add(Overlay.class.getResource("/style/style.css").toExternalForm());
+    scene.getStylesheets().add(SettingsDialog.styleUrl());
 
     // 끝내는 길은 전부 여기로 모은다 — 창 닫고 딱 한 번만 알린다
     Runnable cancel = () -> {
@@ -393,13 +397,13 @@ final class Overlay {
   }
 
   /**
-   * 연한 핑크 십자 커서를 직접 그린다.
+   * 연한 테마 색 십자 커서를 직접 그린다.
    *
    * 윈도우가 주는 기본 십자(Cursor.CROSSHAIR)는 검은색이라, 어둡게 덮인 판 위에서는
-   * 어디를 가리키는지 잘 안 보인다. 그래서 연한 핑크로 그려 쓴다.
+   * 어디를 가리키는지 잘 안 보인다. 그래서 연한 색으로 그려 쓴다.
    * 한가운데는 비워둔다 — 찍으려는 자리를 커서가 덮으면 안 되니까.
    */
-  private static ImageCursor crosshair() {
+  private static ImageCursor crosshair(Color color) {
     int size = 32;
     int mid = size / 2;
 
@@ -409,14 +413,14 @@ final class Overlay {
       if (Math.abs(i - mid) < 3) // 한가운데 빈 자리
         continue;
       for (int t = 0; t < POINTER_WIDTH; t++) {
-        pixels.setColor(i, mid + t, POINTER);
-        pixels.setColor(mid + t, i, POINTER);
+        pixels.setColor(i, mid + t, color);
+        pixels.setColor(mid + t, i, color);
       }
     }
     // 정확히 여기라고 찍어주는 한 점. 선과 같은 굵기라야 가운데가 야위어 보이지 않는다
     for (int x = 0; x < POINTER_WIDTH; x++)
       for (int y = 0; y < POINTER_WIDTH; y++)
-        pixels.setColor(mid + x, mid + y, POINTER);
+        pixels.setColor(mid + x, mid + y, color);
 
     return new ImageCursor(image, mid, mid);
   }

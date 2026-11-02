@@ -36,24 +36,32 @@ src/main/resources/json/chat.json
 # "채팅 삭제" 로 지운 지난 대화들 (한 파일에 한 번 지운 대화)
 src/main/resources/json/chats/
 src/main/resources/json/memo.json
+# 목표 쪼개기 트리와 거기서 오간 말 (GoalStore)
+src/main/resources/json/goals.json
+# ↑ 메모장에 적은 메모들 (NotepadStore)
+src/main/resources/json/notepad.json
 src/main/resources/json/presence.json
+src/main/resources/json/affection.json
 src/main/resources/json/history.json
 src/main/resources/json/top.json
 src/main/resources/json/installed.json
 src/main/resources/json/dirs.json
 src/main/resources/json/keys.json
 src/main/resources/json/bookmarks.json
+# 할 일 카테고리와 날마다 쌓이는 할 일 기록 (2026-10-06.json …)
+src/main/resources/json/todo/
 # 내 컴퓨터에 맞춘 것들 (앱 경로, 명령어, 딴 이름, 처음 설정에서 고른 폴더). 새로 받은 사람은 앱 안에서 채운다
 src/main/resources/json/apps.json
 src/main/resources/json/cmds.json
 src/main/resources/json/aliases.json
 src/main/resources/json/settings.json
 src/main/resources/json/prompt.json
+# 숨겨둔 기본 프롬프트(말하는 방식)와, 상대들(마도카 · 마미 · 사야카 · 호무라)의 대화 · 기억 · 프롬프트
+src/main/resources/json/prompt-base.json
+src/main/resources/json/partners/
 # 에디터, 로컬 설정
 .idea/
 *.iml
 .vscode/
 .claude/settings.local.json
 
-# 받아쓰기 모델 (ggml-small.bin 487MB, 말 골라내기용 silero 885KB). 크고 바뀔 일도 없어서 저장소엔 안 올린다
-models/

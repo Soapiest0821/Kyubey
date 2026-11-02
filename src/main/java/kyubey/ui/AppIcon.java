@@ -44,6 +44,22 @@ public final class AppIcon {
       stage.getIcons().setAll(icons);
   }
 
+  /**
+   * 같은 그림을 AWT 쪽 모양으로. 윈도우 알림(WinNotify)이 트레이에 세울 얼굴로 쓴다.
+   * 못 읽으면 null — 부르는 쪽이 알아서 빈 그림으로 때운다.
+   */
+  public static BufferedImage awt() {
+    try (InputStream in = AppIcon.class.getResourceAsStream(RESOURCE)) {
+      if (in == null)
+        return null;
+      byte[] png = toPng(in.readAllBytes());
+      return png == null ? null : ImageIO.read(new ByteArrayInputStream(png));
+    } catch (IOException e) {
+      System.err.println("[icon] " + RESOURCE + " 를 못 읽었어: " + e.getMessage());
+      return null;
+    }
+  }
+
   private static List<Image> load() {
     byte[] ico;
     try (InputStream in = AppIcon.class.getResourceAsStream(RESOURCE)) {

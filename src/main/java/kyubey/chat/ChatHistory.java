@@ -1,7 +1,9 @@
 package kyubey.chat;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import kyubey.core.LateWriter;
 
 import java.io.File;
 import java.io.IOException;
@@ -26,6 +28,40 @@ public class ChatHistory {
     public String text;
     /** 언제 한 말인지 (epoch millis) */
     public long at;
+    /** 비밀 쪽지로 온 말인지. 말풍선엔 접힌 쪽지만 보이고 눌러야 열린다 (SecretNote). 보통 줄엔 안 적는다 */
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public boolean note;
+    /** 쪽지를 한 번이라도 열어봤는지 */
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public boolean opened;
+    /** 화면에서 지운 줄. 말풍선만 안 그리고 마도카한테는 그대로 들려준다 (ChatPane.removeLine) */
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public boolean hidden;
+    /** 밀어서 답장한 말의 시각 · 누가 한 말인지 · 글. 답장이 아니면 replyText 가 null (ChatPane.startReply) */
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public long replyAt;
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public boolean replyMine;
+    /** 답장한 말이 비밀 쪽지였는지 — 그러면 인용에 내용 대신 쪽지라고만 보인다 */
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public boolean replyNote;
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public String replyText;
+    /** 내가 이 말에 단 반응 이모지. 없으면 null (ChatPane.react) */
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public String reaction;
+    /** 마도카가 이 말에 하트를 달았는지 — 이 말로 호감도가 크게 오르면 단다 (ChatPane.HEART_STEP) */
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public boolean heart;
+    /** 보낸 뒤에 고친 말인지 — 말풍선 옆에 "수정됨" 이 붙는다 (ChatPane.startEdit) */
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public boolean edited;
+    /**
+     * 마도카가 아직 말하는 중에 끼어든 내 말인지. 그 답을 만들 땐 못 들은 말이라, 마도카한테 들려줄 땐
+     * 그 답 뒤로 물려서 넘긴다 (ChatPane.window). 화면엔 친 자리 그대로 보인다
+     */
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public boolean cutIn;
 
     /** Jackson 이 쓰는 빈 생성자 */
     public Line() {
@@ -54,6 +90,7 @@ public class ChatHistory {
    */
   public List<Line> load() {
     List<Line> lines = new ArrayList<>();
+    LateWriter.settle(path);
     File file = new File(path);
     if (!file.exists())
       return lines;
@@ -76,15 +113,12 @@ public class ChatHistory {
     return lines;
   }
 
-  /** 지금까지 오간 말을 통째로 덮어쓴다 */
+  /** 지금까지 오간 말을 통째로 덮어쓴다. 내용은 지금 굽고, 파일엔 뒤에서 쓴다 (LateWriter) */
   public void save(List<Line> lines) {
     try {
-      File file = new File(path);
-      if (file.getParentFile() != null)
-        file.getParentFile().mkdirs();
       List<Line> keep = lines.size() <= MAX_LINES ? lines
           : lines.subList(lines.size() - MAX_LINES, lines.size());
-      mapper.writerWithDefaultPrettyPrinter().writeValue(file, new ArrayList<>(keep));
+      LateWriter.write(path, mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(new ArrayList<>(keep)));
     } catch (IOException e) {
       e.printStackTrace();
     }

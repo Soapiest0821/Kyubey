@@ -1,6 +1,7 @@
 package kyubey.chat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import kyubey.core.LateWriter;
 
 import java.io.File;
 import java.io.IOException;
@@ -15,6 +16,18 @@ import java.io.IOException;
  * 앞이면 내가 없는 사이에 붙은 말이 남아 있다는 뜻이다 (ChatPane.readAll 참고).
  *
  * focusAt 은 위젯 창이 마지막으로 포커스를 받은 때다. 화면이 어디든 창만 불렀으면 찍힌다.
+ *
+ * talkedAt 은 마지막 줄이 실제로 붙은 때다. 먼저 건 말은 시각을 앞으로 물려 찍어서 줄에 붙은
+ * 시각만 보면 덜 조용했는데도 다섯 시간이 찬 것처럼 보인다 — 뜸한 길이는 이것과 같이 잰다.
+ *
+ * nudgedAt 은 마도카가 마지막으로 먼저 말을 건 때다. 먼저 거는 건 하루 한 번뿐이라
+ * 껐다 켰다고 같은 날 또 걸면 안 돼서 같이 남긴다.
+ *
+ * todoNaggedOn 은 전날 못 끝낸 할 일을 마지막으로 재촉한 날 (할 일의 하루, yyyy-MM-dd) 이다.
+ * 재촉도 하루 한 번이라 같은 이치로 남긴다.
+ *
+ * clearedAt 은 "채팅 삭제" 로 대화를 지운 때, silenceRolledTo 는 지운 뒤 조용한 시간을 어디까지
+ * 굴려봤는지다 (ChatPane.rollSilence). 껐다 켠 사이의 시간도 다음에 들를 때 그만큼 굴려야 해서 남긴다.
  */
 public class Presence {
 
@@ -24,6 +37,16 @@ public class Presence {
     public long readAt;
     /** 위젯 창이 마지막으로 포커스를 받은 때 (epoch millis, 0 이면 모름) */
     public long focusAt;
+    /** 마지막 줄이 실제로 붙은 때 — 물려 찍은 시각이 아니라 (epoch millis, 0 이면 모름) */
+    public long talkedAt;
+    /** 마도카가 마지막으로 먼저 말을 건 때 — 실제로 건 시각이다 (epoch millis, 0 이면 아직 없음) */
+    public long nudgedAt;
+    /** 못 끝낸 할 일을 마지막으로 재촉한 날 (yyyy-MM-dd, 비었으면 아직 없음) */
+    public String todoNaggedOn = "";
+    /** "채팅 삭제" 로 대화를 지운 때 (epoch millis, 0 이면 지운 적 없음) */
+    public long clearedAt;
+    /** 지운 뒤 조용한 시간을 이 시각까지 굴려봤다 (epoch millis) */
+    public long silenceRolledTo;
 
     /** Jackson 이 쓰는 빈 생성자 */
     public Snapshot() {
@@ -37,8 +60,9 @@ public class Presence {
     this.path = path;
   }
 
-  /** 파일이 없거나 깨졌으면 둘 다 0 — 모르는 것으로 친다 */
+  /** 파일이 없거나 깨졌으면 전부 0 — 모르는 것으로 친다 */
   public Snapshot load() {
+    LateWriter.settle(path);
     File file = new File(path);
     if (!file.exists())
       return new Snapshot();
@@ -52,16 +76,20 @@ public class Presence {
     }
   }
 
-  public void save(long readAt, long focusAt) {
+  public void save(long readAt, long focusAt, long talkedAt, long nudgedAt, String todoNaggedOn,
+      long clearedAt, long silenceRolledTo) {
     Snapshot snapshot = new Snapshot();
     snapshot.readAt = readAt;
     snapshot.focusAt = focusAt;
+    snapshot.talkedAt = talkedAt;
+    snapshot.nudgedAt = nudgedAt;
+    snapshot.todoNaggedOn = todoNaggedOn;
+    snapshot.clearedAt = clearedAt;
+    snapshot.silenceRolledTo = silenceRolledTo;
 
+    // 말 한 줄마다 불려서 화면 스레드에서 바로 쓰지 않는다 (LateWriter)
     try {
-      File file = new File(path);
-      if (file.getParentFile() != null)
-        file.getParentFile().mkdirs();
-      mapper.writerWithDefaultPrettyPrinter().writeValue(file, snapshot);
+      LateWriter.write(path, mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(snapshot));
     } catch (IOException e) {
       e.printStackTrace();
     }

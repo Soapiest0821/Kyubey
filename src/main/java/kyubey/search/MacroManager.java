@@ -109,7 +109,7 @@ public class MacroManager {
     return installed.size();
   }
 
-  /** 폴더를 새로 훑은 뒤 dirs.json 을 다시 읽는다 (처음 설정 / "setup" 에서 저장하면 호출됨) */
+  /** 폴더를 새로 훑은 뒤 dirs.json 을 다시 읽는다 ("설정" 에서 폴더를 바꿔 저장하면 호출됨) */
   public int reloadDirs(String commandsJsonPath) {
     Map<String, List<String>> fresh = loadMap(commandsJsonPath, new TypeReference<Map<String, List<String>>>() {
     }, new HashMap<>());

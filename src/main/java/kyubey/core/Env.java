@@ -15,16 +15,15 @@ import java.util.function.Predicate;
 /**
  * 프로젝트 옆에 놓인 .env 를 읽어주는 자리.
  *
- * 처음엔 GeminiClient 혼자 읽었는데, 받아쓰기(Whisper)도 자기 설정을 여기서 찾게 되면서
- * 같은 파일을 두 군데서 파싱하게 됐다. 읽는 규칙(따옴표 벗기기, export 떼기, # 주석)이
- * 두 벌로 갈라지면 한쪽만 고쳐질 게 뻔해서 이리로 모았다.
+ * 읽는 규칙(따옴표 벗기기, export 떼기, # 주석)이 두 벌로 갈라지면 한쪽만 고쳐질 게 뻔해서
+ * 이리로 모았다.
  *
  * 한 번 읽어두고 계속 들고 있는다. 위젯 안에서 고치는 길(keys 창 → rewrite)만은
  * 쓰고 나서 들고 있던 걸 버려서, 다음에 부를 때 새로 읽게 한다.
  *
  * 파일을 찾는 곳은 세 군데다: 지금 실행 위치(user.dir), jar 가 놓인 폴더, 그 윗 폴더.
  * mvn javafx:run 으로 띄우면 첫 번째에서 잡히고, target\ 에 구운 jar 로 띄우면 뒤엣것이 잡힌다.
- * 모델 파일(models\) 처럼 .env 말고 다른 것도 같은 자리에서 찾기 때문에 homes() 를 열어뒀다.
+ * .env 말고 다른 것도 같은 자리에서 찾을 수 있게 homes() 를 열어뒀다.
  */
 public final class Env {
 
@@ -50,7 +49,7 @@ public final class Env {
 
   /**
    * owns 가 맞다고 하는 이름의 줄을 전부 걷어내고, 그 자리에 entries 를 차례로 적는다.
-   * 나머지 줄(주석, GEMINI_MODEL, WHISPER_… 같은 딴 설정)은 순서까지 그대로 둔다.
+   * 나머지 줄(주석, GEMINI_MODEL 같은 딴 설정)은 순서까지 그대로 둔다.
    * 걷어낸 줄이 하나도 없었으면 맨 위에 적는다. .env 가 아직 없으면 실행 위치에 새로 만든다.
    */
   public static synchronized void rewrite(Predicate<String> owns, Map<String, String> entries) throws IOException {
@@ -122,7 +121,7 @@ public final class Env {
     return homes;
   }
 
-  /** homes() 를 차례로 뒤져서 이 이름(models\ggml-small.bin 같은 상대경로)을 찾는다. 없으면 null */
+  /** homes() 를 차례로 뒤져서 이 이름(상대경로)을 찾는다. 없으면 null */
   public static Path find(String relative) {
     for (Path home : homes()) {
       Path candidate = home.resolve(relative);

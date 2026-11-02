@@ -51,6 +51,10 @@ public class Resolver {
     if (trimmed.isEmpty())
       return Collections.emptyList();
 
+    // "/" 로 시작하면 슬래시 명령어만 (/top /keys /settings /restart). 앱 · 검색은 안 섞는다
+    if (trimmed.startsWith("/"))
+      return matchSlash(trimmed.substring(1));
+
     List<SearchResult> results = new ArrayList<>();
     String[] parts = trimmed.split("\\s+", 2);
 
@@ -160,14 +164,21 @@ public class Resolver {
 
     results.add(new SearchResult("🔍 " + trimmed + " 검색하기!", SearchResult.Type.GOOGLE, trimmed, null));
 
-    // 맨 밑 한 줄은 위가 어떤지에 따라 갈린다.
-    // 검색하기밖에 안 떴다 = 아무것도 못 찾았다는 뜻이라 새로 등록하는 길(new) 을,
-    // 뭐라도 찾았으면 그걸 고치러 가는 길(edit) 을 열어둔다.
-    String keyword = editKeyword(trimmed, parts[0]);
-    if (results.size() == 1)
-      results.add(newResult(trimmed));
-    else if (!Builtin.EDIT.keyword().equalsIgnoreCase(keyword))
-      results.add(editResult(keyword));
+    // 맨 밑 한 줄은 친 이름이 아는 이름인지에 따라 갈린다.
+    // 등록해뒀거나 깔려 있는 이름이면 그걸 고치러 가는 길(edit) 을, 아니면 새로 등록하는 길(new) 을.
+    // 목록에 뭐가 떴는지로 가르면 안 된다 — "insta" 만 쳐도 이름에 insta 가 든 앱들이 줄줄이 떠서
+    // 수정하기로 갔다가, 정작 "insta" 라는 이름은 없다며 되돌아온다.
+    String first = parts[0];
+    boolean commandWord = Builtin.EDIT.keyword().equalsIgnoreCase(first)
+        || Builtin.NEW.keyword().equalsIgnoreCase(first);
+    if (!commandWord) {
+      if (knownName(trimmed))
+        results.add(editResult(trimmed));
+      else if (knownName(first))
+        results.add(editResult(first));
+      else
+        results.add(newResult(trimmed));
+    }
 
     return results;
   }
@@ -188,8 +199,9 @@ public class Resolver {
     String q = typed.toLowerCase();
     List<SearchResult> out = new ArrayList<>();
     for (Builtin builtin : Builtin.values()) {
-      boolean byPrefix = q.length() >= 2 && builtin != Builtin.CLEAR_CHAT
-          && builtin.startsWith(q);
+      if (builtin.slashOnly())
+        continue;
+      boolean byPrefix = q.length() >= 2 && builtin != Builtin.CLEAR_CHAT && builtin.startsWith(q);
       if (builtin.answersTo(q) || byPrefix)
         out.add(builtin.asResult());
     }
@@ -197,22 +209,34 @@ public class Resolver {
   }
 
   /**
-   * 맨 밑 "수정하기" 줄이 데려갈 키워드.
-   * 보통은 첫 마디지만, 친 것 전부가 아는 이름이면 그걸 통째로 넘긴다 —
-   * "Android Studio" 처럼 이름에 띄어쓰기가 있는 앱을 첫 마디("Android")로 잘라 보내면
-   * 그런 이름은 없다며 되돌아오기 때문.
+   * 슬래시 명령어 찾기. "/" 하나만 쳐도 다 뜨고, 뒤에 친 만큼 대표 이름 앞글자로 거른다.
+   * 맞는 게 없으면 빈 목록 — 목록이 닫혀서 잘못 쳤다는 게 보인다.
    */
-  private String editKeyword(String trimmed, String firstWord) {
-    return knownName(trimmed) ? trimmed : firstWord;
+  private static List<SearchResult> matchSlash(String typed) {
+    String q = typed.trim().toLowerCase();
+    List<SearchResult> out = new ArrayList<>();
+    for (Builtin builtin : Builtin.SLASH) {
+      if (builtin.keyword().startsWith(q))
+        out.add(builtin.asSlashResult());
+    }
+    return out;
   }
 
-  /** 등록해뒀거나(앱·사이트·명령어·별칭) 그냥 깔려 있는(installed) 이름인가 */
+  /**
+   * 등록해뒀거나(앱·사이트·명령어·별칭) 그냥 깔려 있는(installed) 이름인가.
+   * 수정 창(AppRegisterDialog.findExisting)이 대소문자를 안 가리고 찾으니 여기도 똑같이 본다.
+   * 맨 밑 줄이 "수정하기" 로 갈지 "새로 등록하기" 로 갈지가 이걸로 갈린다.
+   */
   private boolean knownName(String word) {
-    if (apps.containsKey(word) || sites.containsKey(word)
-        || cmds.containsKey(word) || aliases.containsKey(word))
+    return hasKey(apps, word) || hasKey(sites, word) || hasKey(cmds, word)
+        || hasKey(aliases, word) || hasKey(installed, word);
+  }
+
+  private static boolean hasKey(Map<String, ?> map, String name) {
+    if (map.containsKey(name))
       return true;
-    for (String name : installed.keySet()) {
-      if (name.equalsIgnoreCase(word))
+    for (String key : map.keySet()) {
+      if (key.equalsIgnoreCase(name))
         return true;
     }
     return false;

@@ -55,6 +55,9 @@ public class GeminiClient implements LlmClient {
 
       지금은 빠른 답변 모드야. 길게 따져보지 말고 결론부터 짧게 줘.""";
 
+  /** 앞 대화에 나온 주소 — 링크 읽는 차례에 통째로 지워서 넘긴다 */
+  private static final Pattern URL = Pattern.compile("https?://\\S+");
+
   /** RECITATION 으로 한 번 막혔을 때 프롬프트 뒤에 덧붙여서 다시 찔러보는 문구 */
   private static final String REPHRASE_HINT = """
 
@@ -217,12 +220,18 @@ public class GeminiClient implements LlmClient {
 
   @Override
   public String ask(String prompt, Mode mode) throws IOException, InterruptedException {
-    return converse(SYSTEM_HINT, List.of(new Message(true, prompt)), mode);
+    return converse(SYSTEM_HINT, List.of(new Message(true, prompt)), mode, false);
   }
 
   @Override
   public String chat(String persona, List<Message> turns, Mode mode) throws IOException, InterruptedException {
-    return converse(firstNonBlank(persona, SYSTEM_HINT), turns, mode);
+    return chat(persona, turns, mode, false);
+  }
+
+  @Override
+  public String chat(String persona, List<Message> turns, Mode mode, boolean readLinks)
+      throws IOException, InterruptedException {
+    return converse(firstNonBlank(persona, SYSTEM_HINT), turns, mode, readLinks);
   }
 
   /**
@@ -274,27 +283,31 @@ public class GeminiClient implements LlmClient {
   }
 
   /** ask() 도 chat() 도 결국 여기로 모인다 — 성격 한 덩어리 + 오간 말 목록 */
-  private String converse(String system, List<Message> turns, Mode mode) throws IOException, InterruptedException {
+  private String converse(String system, List<Message> turns, Mode mode, boolean readLinks)
+      throws IOException, InterruptedException {
     if (!isReady())
       throw new IllegalStateException(unavailableReason());
 
+    // 링크 읽기는 방금 내가 건넨 말에 주소가 있을 때만 켠다 — 그 한 번 주고받는 데만 쓰고,
+    // 다음 말부터는 앞에 나온 링크를 다시 열지 않는다
+    boolean urlContext = readLinks && hasUrl(turns);
     try {
-      return send(system, turns, false, mode);
+      return send(system, turns, false, mode, urlContext);
     } catch (RecitationException first) {
       // 같은 프롬프트를 그대로 다시 넣으면 거의 똑같이 막히니까,
       // "네 말로 다시 써줘" 를 붙이고 온도도 올려서 한 번만 더 시도한다.
       try {
-        return send(system, turns, true, mode);
+        return send(system, turns, true, mode, urlContext);
       } catch (RecitationException second) {
         throw new IOException(RECITATION_HELP);
       }
     }
   }
 
-  private String send(String system, List<Message> turns, boolean rephrase, Mode mode)
+  private String send(String system, List<Message> turns, boolean rephrase, Mode mode, boolean urlContext)
       throws IOException, InterruptedException {
     boolean lowThinking = mode == Mode.FAST;
-    Sent sent = post(buildBody(system, turns, rephrase, mode, lowThinking), mode);
+    Sent sent = post(buildBody(system, turns, rephrase, mode, lowThinking, urlContext), mode);
 
     // 키를 다 돌았는데 응답을 한 번도 못 받은 경우 (전부 연결 실패/타임아웃)
     if (sent.response() == null)
@@ -302,7 +315,16 @@ public class GeminiClient implements LlmClient {
 
     // thinkingConfig 를 모르는 모델이면 400 이 온다. 그럼 그것만 빼고 한 번 더.
     if (lowThinking && sent.response().statusCode() == 400 && sent.response().body().contains("thinking")) {
-      sent = post(buildBody(system, turns, rephrase, mode, false), mode);
+      lowThinking = false;
+      sent = post(buildBody(system, turns, rephrase, mode, false, urlContext), mode);
+      if (sent.response() == null)
+        throw failed(sent, mode);
+    }
+
+    // url_context 툴을 모르는 모델이어도 400 이 온다. 링크만 못 읽을 뿐이니 툴을 빼고 한 번 더.
+    if (urlContext && sent.response().statusCode() == 400
+        && (sent.response().body().contains("url_context") || sent.response().body().contains("tool"))) {
+      sent = post(buildBody(system, turns, rephrase, mode, lowThinking, false), mode);
       if (sent.response() == null)
         throw failed(sent, mode);
     }
@@ -469,18 +491,37 @@ public class GeminiClient implements LlmClient {
     return out;
   }
 
-  private String buildBody(String system, List<Message> turns, boolean rephrase, Mode mode, boolean lowThinking)
-      throws IOException {
+  /**
+   * 마지막 답 뒤로 내가 이어 보낸 말들에 http(s) 주소가 있는지 — url_context 툴을 실을지 고를 때 본다.
+   * 그보다 앞선 말은 이미 한 번 주고받은 것이라 안 본다. 끝이 상대 말이면(먼저 거는 말) 볼 것도 없다.
+   */
+  private static boolean hasUrl(List<Message> turns) {
+    for (int i = turns.size() - 1; i >= 0 && turns.get(i).mine(); i--) {
+      String text = turns.get(i).text();
+      if (text != null && (text.contains("http://") || text.contains("https://")))
+        return true;
+    }
+    return false;
+  }
+
+  private String buildBody(String system, List<Message> turns, boolean rephrase, Mode mode, boolean lowThinking,
+      boolean urlContext) throws IOException {
     ObjectNode root = mapper.createObjectNode();
 
     List<Message> merged = merge(turns);
     if (merged.isEmpty())
       throw new IOException("건넬 말이 하나도 없어");
 
+    // 링크를 읽는 차례면 앞서 주고받은 말의 주소는 아예 지워서 넘긴다 — 툴이 켜진 김에
+    // 예전 링크까지 다시 열어 전문을 또 읽지 않게. 사이트 전문은 그 주소를 건넨 한 번에서만 읽는다.
+    int fresh = merged.get(merged.size() - 1).mine() ? merged.size() - 1 : merged.size();
+
     ArrayNode contents = root.putArray("contents");
     for (int i = 0; i < merged.size(); i++) {
       Message message = merged.get(i);
       String text = message.text();
+      if (urlContext && i < fresh)
+        text = URL.matcher(text).replaceAll("(링크)");
       // "네 말로 다시 써줘" 는 맨 끝, 내가 한 말 뒤에만 붙인다
       if (rephrase && message.mine() && i == merged.size() - 1)
         text = text + REPHRASE_HINT;
@@ -493,6 +534,10 @@ public class GeminiClient implements LlmClient {
     root.putObject("systemInstruction")
         .putArray("parts").addObject()
         .put("text", mode == Mode.FAST ? system + FAST_HINT : system);
+
+    // 대화에 나온 링크를 모델이 직접 열어 읽게 한다 (페이지 내용을 가져다 답에 쓴다)
+    if (urlContext)
+      root.putArray("tools").addObject().putObject("url_context");
 
     ObjectNode config = mapper.createObjectNode();
     // 재시도는 좀 더 흔들어야 같은 문장으로 안 돌아온다

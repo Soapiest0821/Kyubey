@@ -1,11 +1,13 @@
 package kyubey.ui;
 
+import kyubey.core.SettingsDialog;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Modality;
@@ -57,7 +59,7 @@ public final class Notice {
 
     Scene scene = new Scene(root);
     scene.setFill(Color.TRANSPARENT);
-    scene.getStylesheets().add(Notice.class.getResource("/style/style.css").toExternalForm());
+    scene.getStylesheets().add(SettingsDialog.styleUrl());
     scene.setOnKeyPressed(e -> {
       if (e.getCode() == KeyCode.ESCAPE)
         popup.close();
@@ -71,6 +73,64 @@ public final class Notice {
       okBtn.requestFocus();
     });
     popup.showAndWait();
+  }
+
+  /**
+   * 물어보고 고른 버튼의 순서를 돌려준다. 첫 버튼이 기본(Enter)이고,
+   * Esc 로 닫으면 아무것도 안 고른 것으로 -1.
+   */
+  public static int ask(Window owner, String message, String... choices) {
+    Stage popup = new Stage();
+    if (owner != null)
+      popup.initOwner(owner);
+    popup.initModality(Modality.APPLICATION_MODAL);
+    popup.initStyle(StageStyle.TRANSPARENT);
+
+    Label title = new Label("🤔 어떡할까?");
+    title.getStyleClass().add("notice-title");
+
+    Label body = new Label(message);
+    body.getStyleClass().add("notice-message");
+    body.setWrapText(true);
+    body.setMaxWidth(300);
+
+    int[] picked = { -1 };
+    HBox buttonBox = new HBox(8);
+    buttonBox.setAlignment(Pos.CENTER_RIGHT);
+    for (int i = 0; i < choices.length; i++) {
+      int index = i;
+      Button btn = new Button(choices[i]);
+      btn.getStyleClass().add(i == 0 ? "dialog-button-primary" : "dialog-button");
+      btn.setDefaultButton(i == 0);
+      btn.setOnAction(e -> {
+        picked[0] = index;
+        popup.close();
+      });
+      buttonBox.getChildren().add(btn);
+    }
+
+    VBox root = new VBox(14, title, body, buttonBox);
+    root.getStyleClass().addAll("dialog-root", "notice-root");
+    root.setPadding(new Insets(22));
+    root.setAlignment(Pos.CENTER_LEFT);
+
+    Scene scene = new Scene(root);
+    scene.setFill(Color.TRANSPARENT);
+    scene.getStylesheets().add(SettingsDialog.styleUrl());
+    scene.setOnKeyPressed(e -> {
+      if (e.getCode() == KeyCode.ESCAPE)
+        popup.close();
+    });
+
+    popup.setScene(scene);
+    WindowDrag.makeDraggable(popup, root);
+    popup.setOnShown(e -> {
+      centerOn(popup, owner);
+      if (!buttonBox.getChildren().isEmpty())
+        buttonBox.getChildren().get(0).requestFocus();
+    });
+    popup.showAndWait();
+    return picked[0];
   }
 
   /** 띄운 쪽 창 한가운데로. 주인 창이 없거나 아직 크기를 모르면 화면 가운데로 둔다 */

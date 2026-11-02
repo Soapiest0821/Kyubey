@@ -1,5 +1,6 @@
 package kyubey.search;
 
+import kyubey.core.SettingsDialog;
 import kyubey.index.AppMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -262,8 +263,26 @@ public class AppRegisterDialog {
     TextField urlField = new TextField();
     urlField.setPromptText("예: https://www.youtube.com");
     urlField.getStyleClass().add("dialog-textfield");
-    urlField.setPrefWidth(330);
-    VBox siteBox = new VBox(8, label("주소"), urlField);
+    HBox.setHgrow(urlField, Priority.ALWAYS);
+
+    // 적어둔 주소가 맞게 열리는지 확인하거나, 비어 있으면 브라우저를 띄워 주소를 찾아오게 한다
+    Button openBrowserBtn = new Button("브라우저 열기");
+    openBrowserBtn.getStyleClass().add("dialog-button");
+    openBrowserBtn.setOnAction(e -> {
+      String url = normalizeUrl(urlField.getText().trim());
+      if (url == null)
+        url = "https://www.google.com";
+      try {
+        // cmd /c start 는 주소 속 & 에서 잘리니까 rundll32 로 그대로 넘긴다
+        Runtime.getRuntime().exec(new String[] { "rundll32", "url.dll,FileProtocolHandler", url });
+      } catch (IOException ex) {
+        showAlert(dialog, "브라우저를 못 열었어 ㅠㅠ: " + ex.getMessage());
+      }
+    });
+    HBox urlRow = new HBox(8, urlField, openBrowserBtn);
+    urlRow.setAlignment(Pos.CENTER_LEFT);
+    urlRow.setPrefWidth(330);
+    VBox siteBox = new VBox(8, label("주소"), urlRow);
 
     // ── 명령어: 작업 폴더(입력 + 버튼) + 명령어 ──
     TextField dirField = new TextField();
@@ -480,7 +499,7 @@ public class AppRegisterDialog {
       e.consume();
     });
 
-    scene.getStylesheets().add(AppRegisterDialog.class.getResource("/style/style.css").toExternalForm());
+    scene.getStylesheets().add(SettingsDialog.styleUrl());
     dialog.setScene(scene);
     WindowDrag.makeDraggable(dialog, root);
     dialog.setOnShown(e -> {

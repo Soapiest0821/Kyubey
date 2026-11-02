@@ -1,8 +1,10 @@
 package kyubey.chat;
 
+import kyubey.core.SettingsDialog;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -11,10 +13,12 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.layout.Region;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -25,8 +29,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.function.Predicate;
+import kyubey.ui.Theme;
 import kyubey.ui.WindowDrag;
 
 /**
@@ -38,6 +46,10 @@ import kyubey.ui.WindowDrag;
  *
  * 말풍선 모양은 수다 화면(ChatPane)과 같은 스타일을 빌려 쓴다. 다만 같은 분에 이어진 줄
  * 시각 합치기는 안 한다 — 읽기만 하는 곳이라 줄마다 시각이 붙어 있는 편이 찾아보기 쉽다.
+ *
+ * 호감도도 대화에 묶여 같이 보관되니, 고른 대화를 지울 때의 호감도를 제목 옆에 띄운다.
+ * 수다 화면 머리말처럼 두 번 누르면 그때 오르내린 이유들이 펼쳐진다 (AffectionDialog).
+ * 거기서 한 줄을 또 두 번 누르면 이 창 오른쪽 대화에서 그 말풍선으로 간다.
  */
 public final class ChatArchiveDialog {
 
@@ -57,8 +69,12 @@ public final class ChatArchiveDialog {
   private ChatArchiveDialog() {
   }
 
-  /** 창을 띄우고 닫힐 때까지 기다린다 */
-  public static void show(Stage owner, ChatArchive archive) {
+  /**
+   * 창을 띄우고 닫힐 때까지 기다린다. noteSingleClick 이면 비밀 쪽지를 한 번 눌러 연다 (수다 화면과 같은 규칙).
+   * name 은 캐릭터 이름 — 답장 인용에 쓴다. likingEmojis 는 호감도 칸마다 쓸 이모지 (수다 화면과 같은 것)
+   */
+  public static void show(Stage owner, ChatArchive archive, String name, boolean noteSingleClick, List<String> likingEmojis,
+      Predicate<Affection.Change> revealed) {
     Stage dialog = new Stage();
     dialog.initOwner(owner);
     dialog.initModality(Modality.APPLICATION_MODAL);
@@ -66,6 +82,14 @@ public final class ChatArchiveDialog {
 
     Label heading = new Label("📜 지난 대화");
     heading.getStyleClass().add("notice-title");
+
+    // 고른 대화를 지울 때의 호감도. 고르기 전이나 호감도를 묶기 전에 보관한 대화면 숨긴다
+    Label liking = new Label();
+    liking.getStyleClass().add("chat-liking");
+    liking.setVisible(false);
+    liking.setManaged(false);
+    HBox top = new HBox(10, heading, liking);
+    top.setAlignment(Pos.BASELINE_LEFT);
 
     Label sub = new Label("채팅 삭제로 지운 대화들이야. 보기만 할 수 있어 · Esc 닫기");
     sub.getStyleClass().add("dialog-path-label");
@@ -83,6 +107,8 @@ public final class ChatArchiveDialog {
     scroll.setPrefWidth(0);
     HBox.setHgrow(scroll, Priority.ALWAYS);
 
+    // 오른쪽에 그려진 말풍선 줄마다 그 줄 — 호감도 기록에서 그 말로 찾아갈 때 (render 가 채운다)
+    Map<ChatHistory.Line, Node> rows = new HashMap<>();
     List<ChatArchive.Entry> entries = archive.list();
     ListView<ChatArchive.Entry> list = new ListView<>();
     list.getStyleClass().add("dialog-alias-list");
@@ -104,7 +130,8 @@ public final class ChatArchiveDialog {
       }
     });
     list.getSelectionModel().selectedItemProperty().addListener((obs, was, is) -> {
-      render(log, is);
+      render(scroll, rows, is, name, noteSingleClick);
+      showLiking(liking, is, likingEmojis);
       // 긴 대화는 끝에서부터 읽는 게 보통이라 맨 아래로 (ChatPane.scrollToBottom 과 같은 이치)
       Platform.runLater(() -> {
         scroll.applyCss();
@@ -122,7 +149,22 @@ public final class ChatArchiveDialog {
     HBox buttons = new HBox(close);
     buttons.setAlignment(Pos.CENTER_RIGHT);
 
-    VBox root = new VBox(12, heading, sub, body, buttons);
+    liking.setOnMouseClicked(e -> {
+      ChatArchive.Entry entry = list.getSelectionModel().getSelectedItem();
+      if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2 && entry != null && entry.affection != null)
+        AffectionDialog.show(dialog, entry.affection.value,
+            entry.affection.history == null ? List.of() : entry.affection.history, likingEmojis, revealed,
+            change -> {
+              ChatHistory.Line line = ChatPane.lineOf(entry.lines, change);
+              Node row = line == null ? null : rows.get(line);
+              if (row == null)
+                return false;
+              ChatPane.scrollTo(scroll, row);
+              return true;
+            });
+    });
+
+    VBox root = new VBox(12, top, sub, body, buttons);
     root.getStyleClass().add("dialog-root");
     root.setPadding(new Insets(16));
     // 위젯 창(600x400)보다 작게 — 위에 떠도 뒤 창을 통째로 가리지 않게
@@ -130,7 +172,7 @@ public final class ChatArchiveDialog {
 
     Scene scene = new Scene(root);
     scene.setFill(Color.TRANSPARENT);
-    scene.getStylesheets().add(ChatArchiveDialog.class.getResource("/style/style.css").toExternalForm());
+    scene.getStylesheets().add(SettingsDialog.styleUrl());
     scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
       if (e.getCode() == KeyCode.ESCAPE) {
         e.consume();
@@ -158,39 +200,79 @@ public final class ChatArchiveDialog {
     return day + " · " + entry.lines.size() + "줄";
   }
 
-  private static void render(VBox log, ChatArchive.Entry entry) {
+  /** 제목 옆 호감도를 고른 대화의 것으로 고쳐 쓴다 */
+  private static void showLiking(Label label, ChatArchive.Entry entry, List<String> emojis) {
+    boolean has = entry != null && entry.affection != null;
+    if (has) {
+      int value = entry.affection.value;
+      label.setText(Affection.emoji(value, emojis) + " " + value);
+    }
+    label.setVisible(has);
+    label.setManaged(has);
+  }
+
+  private static void render(ScrollPane scroll, Map<ChatHistory.Line, Node> rows, ChatArchive.Entry entry, String name,
+      boolean noteSingleClick) {
+    VBox log = (VBox) scroll.getContent();
     log.getChildren().clear();
+    rows.clear();
     if (entry == null)
       return;
 
     LocalDate drawnDay = null;
+    // 상대 말풍선 차례 — 파스텔 테마는 이 차례로 색을 돌린다 (수다 화면과 같게)
+    int theirs = 0;
     for (ChatHistory.Line line : entry.lines) {
+      // 수다 화면에서 지운 말은 여기서도 안 보인다
+      if (line.hidden)
+        continue;
       LocalDateTime when = when(line);
       if (!when.toLocalDate().equals(drawnDay)) {
         drawnDay = when.toLocalDate();
         log.getChildren().add(dateMark(drawnDay));
       }
-      log.getChildren().add(bubble(line.text, line.mine, when));
+      // 인용을 누르면 답한 원래 말로 — 지웠으면 가만히
+      Runnable jump = () -> {
+        Node origin = rows.get(ChatPane.replyOrigin(entry.lines, line));
+        if (origin != null)
+          ChatPane.scrollTo(scroll, origin);
+      };
+      HBox row = bubble(line, when, name, noteSingleClick, theirs, jump);
+      rows.put(line, row);
+      log.getChildren().add(row);
+      if (!line.mine)
+        theirs++;
     }
   }
 
-  /** 수다 화면과 같은 모양의 말풍선. 내 말은 왼쪽, 마도카 말은 오른쪽 */
-  private static HBox bubble(String text, boolean mine, LocalDateTime at) {
-    Label label = new Label(text);
-    label.setWrapText(true);
-    label.getStyleClass().addAll("chat-bubble", mine ? "chat-mine" : "chat-theirs");
+  /** 수다 화면과 같은 모양의 말풍선. 내 말은 오른쪽, 마도카 말은 왼쪽 */
+  private static HBox bubble(ChatHistory.Line line, LocalDateTime at, String name, boolean noteSingleClick, int theirsIndex,
+      Runnable jump) {
+    boolean mine = line.mine;
+    Region label;
+    if (line.note) {
+      // 보기만 하는 창이라 열어봤다고 따로 남기지는 않는다
+      label = SecretNote.bubble(line, name, noteSingleClick, null);
+    } else {
+      label = BubbleText.of(line.text);
+      label.getStyleClass().addAll("chat-bubble", mine ? "chat-mine" : "chat-theirs");
+      if (!mine)
+        label.getStyleClass().add(Theme.cycleClass(theirsIndex));
+    }
     // 창 크기가 안 변하니 폭도 고정 — 스크롤 폭에 묶어두면 세로 막대가 들락날락하며 떨린다
     label.setMaxWidth(BUBBLE_WIDTH);
+    // 반응은 보기만 — 고치는 건 수다 화면에서
+    Region body = ChatPane.withReaction(ChatPane.withQuote(label, line, name, jump), ChatPane.reactionChip(line), ChatPane.heartChip(line), name, mine);
 
     Label time = new Label(TIME.format(at));
     time.getStyleClass().add("chat-time");
 
     HBox row = new HBox(4);
-    row.setAlignment(mine ? Pos.BOTTOM_LEFT : Pos.BOTTOM_RIGHT);
+    row.setAlignment(mine ? Pos.BOTTOM_RIGHT : Pos.BOTTOM_LEFT);
     if (mine)
-      row.getChildren().addAll(label, time);
+      row.getChildren().addAll(time, body);
     else
-      row.getChildren().addAll(time, label);
+      row.getChildren().addAll(body, time);
     return row;
   }
 

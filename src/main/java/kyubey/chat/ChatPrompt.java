@@ -6,11 +6,15 @@ import java.io.File;
 import java.io.IOException;
 
 /**
- * 마도카한테 입혀주는 성격문과, 뜸할 때 먼저 말을 걸라고 끼워 넣는 안내문을 손으로 고쳐 쓴 것.
+ * 수다 상대(ChatProfile) 하나한테 붙인 이름과, 입혀주는 성격문과, 뜸할 때 먼저 말을 걸라고 끼워 넣는 안내문,
+ * 전날 못 끝낸 할 일을 재촉하라고, 할 일을 끝냈을 때 칭찬하라고 끼워 넣는 안내문을 손으로 고쳐 쓴 것.
  * 기본 화면에 "채팅 프롬프트" 를 치면 고친다.
  *
- * 비어 있으면 고친 적이 없다는 뜻이라 ChatPane 에 박혀 있는 기본값(PERSONA, NUDGE)이 그대로 간다.
- * 둘은 따로 센다 — 하나만 고쳐도 나머지는 기본값을 따라간다.
+ * 상대마다 파일이 따로다 (ChatProfile.path). 말하는 방식을 일러두는 기본 프롬프트는 상대와 상관없이
+ * 하나라서 여기 말고 BasePrompt 에 있다.
+ *
+ * 비어 있으면 고친 적이 없다는 뜻이라 기본값(ChatProfile.defaultName / defaultPersona, ChatPane.NUDGE …)이 그대로 간다.
+ * 다섯은 따로 센다 — 하나만 고쳐도 나머지는 기본값을 따라간다.
  * 기본값을 파일에 미리 써두지 않는 건, 그러면 코드에서 기본 문구를 다듬어도
  * 한 번도 안 고친 사람까지 옛날 문구에 묶여버려서다.
  *
@@ -21,10 +25,16 @@ public class ChatPrompt {
 
   /** 파일에 담기는 모양. Jackson 이 그대로 읽고 쓰게 필드를 열어둔다 */
   public static class Snapshot {
+    /** 고쳐 쓴 상대 이름. 비었으면 기본 이름 (ChatProfile.defaultName) */
+    public String name = "";
     /** 고쳐 쓴 성격문. 비었으면 기본값을 쓴다 */
     public String persona = "";
     /** 고쳐 쓴 안내문. 비었으면 기본값을 쓴다 */
     public String nudge = "";
+    /** 고쳐 쓴 할 일 재촉 안내문. 비었으면 기본값을 쓴다 */
+    public String todo = "";
+    /** 고쳐 쓴 할 일 칭찬 안내문. 비었으면 기본값을 쓴다 */
+    public String praise = "";
 
     /** Jackson 이 쓰는 빈 생성자 */
     public Snapshot() {
@@ -46,7 +56,7 @@ public class ChatPrompt {
   public Snapshot load() {
     File file = new File(path);
     if (!file.exists()) {
-      save("", "");
+      save(new Snapshot());
       return new Snapshot();
     }
 
@@ -54,10 +64,16 @@ public class ChatPrompt {
       Snapshot loaded = mapper.readValue(file, Snapshot.class);
       if (loaded == null)
         return new Snapshot();
+      if (loaded.name == null)
+        loaded.name = "";
       if (loaded.persona == null)
         loaded.persona = "";
       if (loaded.nudge == null)
         loaded.nudge = "";
+      if (loaded.todo == null)
+        loaded.todo = "";
+      if (loaded.praise == null)
+        loaded.praise = "";
       return loaded;
     } catch (IOException e) {
       e.printStackTrace();
@@ -65,12 +81,21 @@ public class ChatPrompt {
     }
   }
 
-  /** 통째로 덮어쓴다. 빈 문자열을 넘기면 그쪽은 기본값으로 돌아간 것으로 친다 */
-  public void save(String persona, String nudge) {
-    Snapshot snapshot = new Snapshot();
-    snapshot.persona = persona == null ? "" : persona;
-    snapshot.nudge = nudge == null ? "" : nudge;
+  /** 고쳐 둔 이름만 슬쩍 본다. 파일이 없어도 만들지 않는다 (파스텔 상대 목록이 넷을 다 훑어서) */
+  public String peekName() {
+    File file = new File(path);
+    if (!file.isFile())
+      return "";
+    try {
+      Snapshot loaded = mapper.readValue(file, Snapshot.class);
+      return loaded == null || loaded.name == null ? "" : loaded.name.strip();
+    } catch (IOException e) {
+      return "";
+    }
+  }
 
+  /** 통째로 덮어쓴다. 빈 문자열인 칸은 기본값으로 돌아간 것으로 친다 */
+  public void save(Snapshot snapshot) {
     try {
       File file = new File(path);
       if (file.getParentFile() != null)

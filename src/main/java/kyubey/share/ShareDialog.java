@@ -1,6 +1,7 @@
 package kyubey.share;
 
 
+import kyubey.core.SettingsDialog;
 import javafx.application.Platform;
 import javafx.collections.ListChangeListener;
 import javafx.geometry.Insets;
@@ -130,7 +131,7 @@ public final class ShareDialog {
 
     Scene scene = new Scene(box);
     scene.setFill(Color.TRANSPARENT);
-    scene.getStylesheets().add(ShareDialog.class.getResource("/style/style.css").toExternalForm());
+    scene.getStylesheets().add(SettingsDialog.styleUrl());
     scene.setOnKeyPressed(e -> {
       if (e.getCode() == KeyCode.ESCAPE)
         dialog.close();

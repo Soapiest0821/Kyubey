@@ -12,6 +12,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 
+import kyubey.core.SettingsDialog;
+
 /**
  * 잘라낸 그림을 구글 렌즈로 넘긴다.
  *
@@ -114,6 +116,8 @@ final class Lens {
         </body>
         </html>
         """
+        // 버튼 · 링크 색도 위젯 테마를 따라간다. 그림을 넣기 전에 바꿔야 base64 를 안 훑는다
+        .transform(SettingsDialog.theme()::swap)
         .replace("ACTION_URL", action)
         .replace("UPLOAD_PAGE", UPLOAD_PAGE)
         .replace("IMAGE_BASE64", image);

@@ -1,6 +1,7 @@
 package kyubey.llm;
 
 
+import kyubey.core.SettingsDialog;
 import javafx.css.PseudoClass;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -11,8 +12,10 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
+import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -26,6 +29,7 @@ import javafx.stage.Window;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import kyubey.ui.Emoji;
 import kyubey.ui.MarkdownView;
 import kyubey.ui.WindowDrag;
 
@@ -46,6 +50,10 @@ public final class KeysDialog {
   private static final String KEY_PAGE = "https://aistudio.google.com/api-keys?hl=ko";
   /** 가림막이 덮여 있는 칸 — 밑에 깔린 진짜 글자는 투명하게 */
   private static final PseudoClass MASKED = PseudoClass.getPseudoClass("masked");
+  /** 제목 · 키 줄 불 · 범례 불과 링크 그림 크기 */
+  private static final double HEADING_SIZE = 18;
+  private static final double LIGHT_SIZE = 16;
+  private static final double LEGEND_SIZE = 13;
 
   private KeysDialog() {
   }
@@ -57,13 +65,20 @@ public final class KeysDialog {
     dialog.initModality(Modality.APPLICATION_MODAL);
     dialog.initStyle(StageStyle.TRANSPARENT);
 
-    Label heading = new Label("🔑 Gemini 키");
+    Label heading = new Label("Gemini 키");
+    heading.setGraphic(Emoji.view("🔑", HEADING_SIZE));
     heading.getStyleClass().add("notice-title");
 
-    Label sub = new Label("위에서부터 WIZ_1, WIZ_2 … 로 .env 에 적혀. 🟢 성공 · 🟡 서버 오류 · 🔴 한도 초과 · ⚫ 못 씀 · ⚪ 안 써봄"
-        + "\nCtrl+Enter 저장 · Esc 취소");
-    sub.getStyleClass().add("dialog-path-label");
-    sub.setWrapText(true);
+    // 불 범례도 그림으로 (Emoji) — 글자로 두면 윈도우에선 흑백 윤곽만 나온다
+    FlowPane legend = new FlowPane(6, 2);
+    legend.getChildren().add(hint("위에서부터 WIZ_1, WIZ_2 … 로 .env 에 적혀."));
+    String[][] lights = { { "🟢", "성공" }, { "🟡", "서버 오류" }, { "🔴", "한도 초과" }, { "⚫", "못 씀" }, { "⚪", "안 써봄" } };
+    for (String[] l : lights) {
+      Label item = hint(l[1]);
+      item.setGraphic(Emoji.view(l[0], LEGEND_SIZE));
+      legend.getChildren().add(item);
+    }
+    VBox sub = new VBox(2, legend, hint("Ctrl+Enter 저장 · Esc 취소"));
 
     VBox rows = new VBox(6);
     List<String> current = GeminiClient.readKeys();
@@ -111,7 +126,8 @@ public final class KeysDialog {
     };
 
     // 왼쪽 아래 — 키 발급/상태 보는 곳
-    Label link = new Label("🔗 aistudio.google.com/api-keys");
+    Label link = new Label("aistudio.google.com/api-keys");
+    link.setGraphic(Emoji.view("🔗", LEGEND_SIZE));
     link.getStyleClass().add("keys-link");
     link.setCursor(Cursor.HAND);
     link.setOnMouseClicked(e -> MarkdownView.openInBrowser(KEY_PAGE));
@@ -136,7 +152,7 @@ public final class KeysDialog {
 
     Scene scene = new Scene(root);
     scene.setFill(Color.TRANSPARENT);
-    scene.getStylesheets().add(KeysDialog.class.getResource("/style/style.css").toExternalForm());
+    scene.getStylesheets().add(SettingsDialog.styleUrl());
     scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
       if (e.getCode() == KeyCode.ESCAPE) {
         e.consume();
@@ -223,17 +239,31 @@ public final class KeysDialog {
     }
   }
 
+  /** 회색 작은 안내 글 */
+  private static Label hint(String text) {
+    Label label = new Label(text);
+    label.getStyleClass().add("dialog-path-label");
+    return label;
+  }
+
+  /** 불을 그림으로 켠다 — 채팅 말풍선처럼. 그림이 없으면 글자 그대로 */
+  private static void light(Label light, String emoji) {
+    ImageView view = Emoji.view(emoji, LIGHT_SIZE);
+    light.setGraphic(view);
+    light.setText(view == null ? emoji : "");
+  }
+
   private static void paint(String text, Label light, Label state, Tooltip tip) {
     String key = clean(text);
     KeyHealth.Status status = key.isEmpty() ? null : KeyHealth.of(key);
     if (status == null) {
-      light.setText("⚪");
+      light(light, "⚪");
       state.setText(key.isEmpty() ? "" : "안 써봄");
       tip.setText("이 키로는 아직 안 물어봤어");
       return;
     }
     String ago = ago(status.at());
-    light.setText(status.state().light());
+    light(light, status.state().light());
     state.setText(status.reason() + " · " + ago);
     tip.setText(status.reason() + " (" + ago + ")");
   }
