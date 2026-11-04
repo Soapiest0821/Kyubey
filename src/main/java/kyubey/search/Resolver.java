@@ -51,7 +51,7 @@ public class Resolver {
     if (trimmed.isEmpty())
       return Collections.emptyList();
 
-    // "/" 로 시작하면 슬래시 명령어만 (/top /keys /settings /restart). 앱 · 검색은 안 섞는다
+    // "/" 로 시작하면 슬래시 명령어만 (/top /todo /keys /settings /restart). 앱 · 검색은 안 섞는다
     if (trimmed.startsWith("/"))
       return matchSlash(trimmed.substring(1));
 

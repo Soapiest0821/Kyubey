@@ -44,6 +44,7 @@ import kyubey.ui.WindowDrag;
  * 저장하면 WIZ_1 부터 번호를 새로 매겨 .env 에 적고 (빈칸·겹치는 키는 빠진다),
  * 클라이언트가 곧장 새로 읽는다. 딴 설정 줄은 그대로 둔다.
  * Ctrl+Enter 저장 · Esc 취소 — PromptDialog 와 같은 손버릇.
+ * 위젯이 전체화면이면 창을 넓히고 키 줄도 더 많이 보이게 띄운다.
  */
 public final class KeysDialog {
 
@@ -54,12 +55,16 @@ public final class KeysDialog {
   private static final double HEADING_SIZE = 18;
   private static final double LIGHT_SIZE = 16;
   private static final double LEGEND_SIZE = 13;
+  private static final double FULL_WIDTH = 760;
+  /** 스크롤 없이 보일 키 줄 수 — 평소 · 전체화면 */
+  private static final int VISIBLE_ROWS = 8;
+  private static final int FULL_VISIBLE_ROWS = 14;
 
   private KeysDialog() {
   }
 
   /** 창을 띄우고 닫힐 때까지 기다린다. 저장하고 닫았으면 true */
-  public static boolean show(Stage owner, LlmClient llm) {
+  public static boolean show(Stage owner, LlmClient llm, boolean full) {
     Stage dialog = new Stage();
     dialog.initOwner(owner);
     dialog.initModality(Modality.APPLICATION_MODAL);
@@ -91,7 +96,7 @@ public final class KeysDialog {
     scroll.getStyleClass().add("keys-scroll");
     scroll.setFitToWidth(true);
     scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-    scroll.setPrefViewportHeight(Math.min(8, Math.max(3, current.size())) * 44);
+    scroll.setPrefViewportHeight(Math.min(full ? FULL_VISIBLE_ROWS : VISIBLE_ROWS, Math.max(3, current.size())) * 44);
 
     Button add = new Button("+ 키 추가");
     add.getStyleClass().add("dialog-button");
@@ -148,7 +153,9 @@ public final class KeysDialog {
     VBox root = new VBox(12, heading, sub, scroll, add, error, buttons);
     root.getStyleClass().add("dialog-root");
     root.setPadding(new Insets(22));
-    root.setPrefWidth(520);
+    root.setPrefWidth(full ? FULL_WIDTH : 520);
+    if (full)
+      root.setStyle("-fx-font-size: 16px;");
 
     Scene scene = new Scene(root);
     scene.setFill(Color.TRANSPARENT);

@@ -161,11 +161,11 @@
   -fx-border-width: 1;
 }
 
-/* 전체화면 기본 화면 (Main.applyFull) — 화면 전체를 테마색으로 어둡게 깔고, 입력창 둘레에만 빛을 둔다.
-   #rrggbbaa 로 적어서 테마 색은 따라가되 (Theme 이 앞 여섯 자리를 바꾼다) 투명도 설정엔 안 묻어 늘 반투명이다.
+/* 전체화면 기본 화면 (Main.applyFull) — 바탕은 완전히 비우고 입력창 둘레에만 빛을 둔다.
+   빛 밖 클릭은 뒤 창으로 빠진다.
    테마 덧붙임의 .widget-root 그라데이션보다 이기게 두 클래스로 건다 */
 .widget-root.full-dim {
-  -fx-background-color: #7a556673;
+  -fx-background-color: transparent;
   -fx-background-radius: 0;
   -fx-border-color: transparent;
   -fx-border-radius: 0;
@@ -174,6 +174,16 @@
 .full-glow {
   -fx-background-color: radial-gradient(center 50% 50%, radius 50%,
       #ffd2e6e6 0%, #ffd2e6a0 45%, #ffd2e640 75%, transparent 100%);
+}
+
+/* 오로라의 할 일 풍선 — 기본 위젯 카테고리 이름표(.todo-goal) 모양에 카테고리 색 테두리 (색은 AuroraTodos 가 인라인으로) */
+.aurora-todo {
+  -fx-background-color: rgba(255, 255, 255, 0.82);
+  -fx-background-radius: 8;
+  -fx-border-radius: 8;
+  -fx-border-width: 2;
+  -fx-padding: 4 9 4 7;
+  -fx-effect: dropshadow(gaussian, rgba(122, 85, 102, 0.25), 8, 0, 0, 2);
 }
 
 .dialog-root {
@@ -261,6 +271,133 @@
 
 .dialog-button-primary:hover {
   -fx-background-color: #ff85b3;
+}
+
+/* 되돌릴 수 없는 일 (관계도 지우기) — 빨간 테두리 */
+.dialog-button-danger {
+  -fx-background-color: rgba(255, 255, 255, 0.6);
+  -fx-background-radius: 10;
+  -fx-border-radius: 10;
+  -fx-border-color: #e53935;
+  -fx-border-width: 2;
+  -fx-text-fill: #c62828;
+  -fx-font-size: 13px;
+  -fx-font-weight: bold;
+  -fx-padding: 6 14 6 14;
+  -fx-cursor: hand;
+}
+
+.dialog-button-danger:hover {
+  -fx-background-color: #ffebee;
+}
+
+.dialog-button-danger:disabled {
+  -fx-opacity: 0.45;
+}
+
+/* 전체화면 띄운 판 속 목록 (목표 · 수다 상대) */
+.float-list .list-cell {
+  -fx-font-size: 12px;
+  -fx-padding: 4 8 4 8;
+}
+
+.float-title {
+  -fx-font-size: 11px;
+  -fx-font-weight: bold;
+  -fx-text-fill: #9b7383;
+  -fx-padding: 0 2 0 4;
+}
+
+/* 띄운 목록 맨 끝 줄 — 새로 만들기 단추만 오른쪽에. 줄 자체는 칠하지 않는다 */
+.float-list .list-cell.goal-new-row,
+.float-list .list-cell.goal-new-row:hover,
+.float-list .list-cell.goal-new-row:selected,
+.float-list .list-cell.goal-new-row:filled:selected {
+  -fx-background-color: transparent;
+  -fx-border-color: transparent;
+  -fx-padding: 4 6 4 6;
+}
+
+/* 띄운 목록 끝 줄의 새로 만들기 단추 */
+/* 새로 만들기 · 갈래 머리 (goal-group-pill) 가 같은 둥근 딱지 — 흐린 회색 대신 테마 진한 색 글씨에 반투명 흰 바탕 */
+.float-new,
+.goal-group-pill {
+  -fx-background-color: rgba(255, 255, 255, 0.6);
+  -fx-background-radius: 10;
+  -fx-border-color: rgba(255, 105, 160, 0.35);
+  -fx-border-radius: 10;
+  -fx-border-width: 1;
+  -fx-text-fill: #b32b5e;
+  -fx-font-size: 11px;
+  -fx-font-weight: bold;
+  -fx-padding: 1 9 1 9;
+}
+
+.float-new {
+  -fx-cursor: hand;
+}
+
+.float-new:hover {
+  -fx-background-color: #ffe3ef;
+}
+
+/* 띄운 판 오른쪽 아래 꼭지점 크기 손잡이 — 작은 삼각 빗금 */
+.float-resizer {
+  -fx-shape: "M 14 4 L 14 14 L 4 14 Z";
+  -fx-background-color: rgba(255, 105, 160, 0.35);
+}
+
+.float-resizer:hover {
+  -fx-background-color: #ff69a0;
+}
+
+/* 목표 목록 (머릿줄 콤보 · 띄운 판) 의 갈래 머리 — 목표 · 관계도. 못 고르는 줄이라 흐려지지 않게 */
+.list-cell.goal-group,
+.float-list .list-cell.goal-group,
+.goal-picker .list-cell.goal-group {
+  -fx-background-color: transparent;
+  -fx-padding: 6 4 3 4;
+  -fx-opacity: 1;
+}
+
+.list-cell.goal-group:disabled {
+  -fx-opacity: 1;
+}
+
+/* 갈래 밑 줄 — 머리 글자와 왼쪽을 맞춘다 */
+.float-list .list-cell.goal-item,
+.goal-picker .list-cell.goal-item {
+  -fx-padding: 4 8 4 8;
+}
+
+
+.partner-row {
+  -fx-background-radius: 8;
+  -fx-padding: 3 4 3 8;
+  -fx-cursor: hand;
+}
+
+.partner-row:hover {
+  -fx-background-color: rgba(255, 105, 160, 0.12);
+}
+
+.partner-row-current {
+  -fx-background-color: rgba(255, 105, 160, 0.22);
+}
+
+.partner-name {
+  -fx-font-size: 12px;
+  -fx-text-fill: #4a2c3a;
+}
+
+/* 상대 목록의 안 읽은 말 수 */
+.partner-unread {
+  -fx-background-color: #ff69a0;
+  -fx-background-radius: 9;
+  -fx-text-fill: white;
+  -fx-font-size: 11px;
+  -fx-font-weight: bold;
+  -fx-padding: 1 7 1 7;
 }
 
 .dialog-alias-list {
@@ -494,6 +631,36 @@
   -fx-cursor: hand;
 }
 
+/* 관계도 판 왼쪽 위 보는 법 단추 — (자유 그래프) · (루트부터) */
+.graph-mode {
+  -fx-background-color: #fff0f6;
+  -fx-background-radius: 12;
+  -fx-border-color: #ffd2e6;
+  -fx-border-radius: 12;
+  -fx-border-width: 1;
+  -fx-padding: 2;
+  -fx-spacing: 2;
+}
+
+.graph-mode-button {
+  -fx-background-color: transparent;
+  -fx-background-radius: 10;
+  -fx-text-fill: #9b7383;
+  -fx-font-size: 11px;
+  -fx-padding: 2 9 2 9;
+  -fx-cursor: hand;
+}
+
+.graph-mode-button:hover {
+  -fx-background-color: #ffe3ef;
+}
+
+.graph-mode-button:selected {
+  -fx-background-color: #ff69a0;
+  -fx-text-fill: white;
+  -fx-font-weight: bold;
+}
+
 /* Ctrl+끌기로 잇는 동안 마우스까지 긋는 선 */
 .graph-rubber {
   -fx-stroke: #ff69a0;
@@ -632,7 +799,7 @@
 .float-panel {
   -fx-background-radius: 14;
   -fx-border-radius: 14;
-  -fx-padding: 6;
+  -fx-padding: 6 8 8 8;
   -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 10, 0, 0, 2);
 }
 
@@ -709,6 +876,16 @@
 
 .md-blocks {
   -fx-padding: 12 14 12 14;
+}
+
+/* 버전별 칸 (패치 노트 전체화면) — setSectionLevel 로 켤 때만 생긴다 */
+.md-section {
+  -fx-background-color: rgba(255, 255, 255, 0.5);
+  -fx-background-radius: 10;
+  -fx-border-radius: 10;
+  -fx-border-color: rgba(255, 105, 160, 0.35);
+  -fx-border-width: 1;
+  -fx-padding: 10 14 12 14;
 }
 
 /* 문단 상자(TextFlow) — 여백/테두리만 */
@@ -1032,6 +1209,11 @@
   -fx-padding: 8 40 8 14;
 }
 
+/* 수다 입력칸은 이모지 단추 옆에 사진 단추까지 얹혀서 오른쪽을 더 비운다 */
+.chat-input-attach {
+  -fx-padding: 8 68 8 14;
+}
+
 .chat-input:focused {
   -fx-border-color: #ff69a0;
   -fx-border-width: 2;
@@ -1276,6 +1458,50 @@
   -fx-font-weight: bold;
   -fx-border-color: transparent transparent #222222 transparent;
   -fx-border-width: 0 0 2 0;
+}
+
+/* ── 전체화면 할 일 창의 한 달 달력 ── */
+.todo-month {
+  -fx-background-color: rgba(255, 255, 255, 0.75);
+  -fx-background-radius: 12;
+  -fx-padding: 8;
+}
+
+.todo-month-cell {
+  -fx-background-color: rgba(255, 255, 255, 0.85);
+  -fx-background-radius: 8;
+  -fx-padding: 4 6 4 6;
+}
+
+.todo-month-cell:hover {
+  -fx-background-color: #ffe3ef;
+}
+
+/* 딴 달 날 — 자리만 채우고 흐리게 */
+.todo-month-cell-out {
+  -fx-opacity: 0.45;
+}
+
+.todo-month-cell-selected {
+  -fx-border-color: #222222;
+  -fx-border-width: 1.5;
+  -fx-border-radius: 8;
+}
+
+.todo-month-item {
+  -fx-text-fill: #333333;
+  -fx-font-size: 12px;
+  -fx-text-overrun: ellipsis;
+}
+
+.todo-month-item-done {
+  -fx-text-fill: #9a9a9a;
+  -fx-strikethrough: true;
+}
+
+.todo-month-more {
+  -fx-text-fill: #7a5566;
+  -fx-font-size: 11px;
 }
 
 .todo-week-arrow {

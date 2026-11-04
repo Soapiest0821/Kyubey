@@ -73,22 +73,47 @@ public final class GoalStore {
     }
   }
 
-  /** 관계도의 연결 하나. 방향 있는 관계도면 from → to, 없으면 순서는 뜻이 없다 */
+  /** 관계도의 연결 하나. 두 칸 사이엔 하나만 둔다 — 방향은 dir 이 정하고, 방향 없는 관계도면 순서도 dir 도 뜻이 없다 */
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static final class Link {
+    /** from → to 한 방향 */
+    static final String ONE = "one";
+    /** 양방향 */
+    static final String BOTH = "both";
+    /** 아직 방향을 안 정했다 — 방향 없는 관계도에서 이은 채로 방향을 달았을 때. Ctrl+끌기로 정한다 */
+    static final String NONE = "none";
+
     public String from;
     public String to;
+    /** ONE · BOTH · NONE. 방향 있는 관계도에서만 뜻이 있다 */
+    public String dir;
 
     public Link() {
     }
 
-    Link(String from, String to) {
+    Link(String from, String to, String dir) {
       this.from = from;
       this.to = to;
+      this.dir = dir;
     }
 
     boolean touches(String nodeId) {
       return nodeId.equals(from) || nodeId.equals(to);
+    }
+
+    boolean one() {
+      return ONE.equals(dir);
+    }
+
+    boolean both() {
+      return BOTH.equals(dir);
+    }
+
+    /** 방향 있는 관계도에서 a 에서 b 로 건너갈 수 있는지 — 방향을 안 정한 연결은 양쪽 다 */
+    boolean goes(String a, String b) {
+      if (one())
+        return a.equals(from) && b.equals(to);
+      return touches(a) && touches(b);
     }
   }
 
@@ -106,6 +131,8 @@ public final class GoalStore {
     public boolean llm = true;
     /** 관계도 연결에 방향이 있는지 (화살표) */
     public boolean directed;
+    /** 관계도를 루트부터 세로줄로 늘어놓아 보는지. 아니면 손으로 잡은 자리대로 (자유 그래프) */
+    public boolean layered;
     /** 관계도의 중심 칸 말고 칸들 — 관계도는 children 대신 여기 평평하게 둔다 */
     public List<Node> nodes = new ArrayList<>();
     public List<Link> links = new ArrayList<>();
@@ -131,24 +158,45 @@ public final class GoalStore {
       return out;
     }
 
-    /** a 와 b 를 잇는 연결. 방향 있는 관계도면 a → b 만, 없으면 어느 쪽이든. 없으면 null */
+    /** a 와 b 를 잇는 연결 — 방향은 안 따진다. 없으면 null */
     Link link(Node a, Node b) {
       for (Link link : links) {
-        if (link.from.equals(a.id) && link.to.equals(b.id))
-          return link;
-        if (!directed && link.from.equals(b.id) && link.to.equals(a.id))
+        if (link.touches(a.id) && link.touches(b.id))
           return link;
       }
       return null;
     }
 
-    /** a 와 b 를 잇는다. 자기 자신이거나 이미 이어져 있으면 null */
+    /** a 와 b 를 잇는다 — 방향 있는 관계도면 a → b, 없으면 방향 안 정한 채로. 자기 자신이거나 이미 이어져 있으면 null */
     Link connect(Node a, Node b) {
       if (a == b || link(a, b) != null)
         return null;
-      Link link = new Link(a.id, b.id);
+      Link link = new Link(a.id, b.id, directed ? Link.ONE : Link.NONE);
       links.add(link);
       return link;
+    }
+
+    /**
+     * 옛 파일 맞추기 — dir 이 없던 연결은 방향 있는 관계도면 한 방향, 없으면 안 정한 걸로.
+     * 예전엔 양방향을 반대로 가는 연결 둘로 담았다 — 하나로 합쳐 양방향으로
+     */
+    void normalizeLinks() {
+      List<Link> kept = new ArrayList<>();
+      for (Link link : links) {
+        if (link.dir == null)
+          link.dir = directed ? Link.ONE : Link.NONE;
+        Link twin = null;
+        for (Link k : kept) {
+          if (k.touches(link.from) && k.touches(link.to))
+            twin = k;
+        }
+        if (twin == null)
+          kept.add(link);
+        else if (twin.one() && link.one() && twin.from.equals(link.to))
+          twin.dir = Link.BOTH;
+      }
+      links.clear();
+      links.addAll(kept);
     }
 
     /** 이 목표에서 새 칸 하나 */
@@ -228,6 +276,11 @@ public final class GoalStore {
         book.goals = new ArrayList<>();
       if (book.guideOff == null)
         book.guideOff = new ArrayList<>();
+      for (Goal goal : book.goals) {
+        if (goal.links == null)
+          goal.links = new ArrayList<>();
+        goal.normalizeLinks();
+      }
       return book;
     } catch (IOException e) {
       e.printStackTrace();

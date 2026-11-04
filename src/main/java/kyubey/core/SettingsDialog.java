@@ -18,6 +18,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
+import javafx.geometry.Rectangle2D;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
@@ -45,6 +46,7 @@ import javafx.scene.paint.Color;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Modality;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.stage.Window;
@@ -108,6 +110,9 @@ public final class SettingsDialog {
    * 창째로 흐리게 하면 글씨와 마도카까지 흐려져서 바탕만 건드린다.
    */
   public static final double DEFAULT_OPACITY = 1.0;
+  /** 전체화면 설정 창 크기 — 화면이 작으면 화면에 맞춰 줄인다 */
+  private static final double FULL_WIDTH = 1400;
+  private static final double FULL_HEIGHT = 820;
   public static final double MIN_OPACITY = 0.8;
   public static final double MAX_OPACITY = 2.0;
 
@@ -193,9 +198,22 @@ public final class SettingsDialog {
   /** 글꼴을 Pretendard 로 쓸지. 끄면 맑은 고딕으로 내려간다 */
   public boolean usePretendard = true;
 
-  /** 창에 포커스가 들어올 때마다 전체화면으로 띄울지. 떠 있는 동안엔 F11 로 오간다 (예전 이름은 startFullScreen) */
-  @JsonAlias("startFullScreen")
-  public boolean focusFullScreen;
+  /** 숨겼던 창을 다시 열 때마다 전체화면으로 띄울지. 떠 있는 동안엔 F11 로 오간다 (예전 이름은 focusFullScreen · startFullScreen) */
+  @JsonAlias({ "focusFullScreen", "startFullScreen" })
+  public boolean openFullScreen;
+
+  /** Win+Alt+Space 로 열 화면 — 기본 위젯 (WIDGET) 이나 오로라 (AURORA: 화면 가운데 빛 속에 입력창만 뜨는 것) */
+  public static final String HOTKEY_WIDGET = "widget";
+  public static final String HOTKEY_AURORA = "aurora";
+  public String hotkeyOpens = HOTKEY_WIDGET;
+
+  /** 오로라에 할 일을 띄울지 — 안 한 건 입력창 밑 빛에서, 끝낸 건 위 빛에서 떠다닌다 (AuroraTodos) */
+  public boolean auroraTodos = true;
+
+  /** 단축키로 오로라를 여는지 */
+  public boolean hotkeyAurora() {
+    return HOTKEY_AURORA.equals(hotkeyOpens);
+  }
 
   /** 전체화면에서 Esc 가 먼저 전체화면을 풀지. 끄면 Esc 는 전체화면 그대로 평소 일 (나가기 · 숨기기) 만 한다 */
   public boolean escExitsFullScreen = true;
@@ -576,8 +594,9 @@ public final class SettingsDialog {
    * 창을 띄우고 닫힐 때까지 기다린다. "저장" 으로 닫았으면 그 설정을, 아니면 null.
    * 색 테마와 투명도는 고르는 동안 owner 에 바로 비춰보고, 저장 안 하고 닫으면 원래대로 돌려놓는다.
    * 처음 켠 거면(settings.json 이 없으면) "취소" 가 "나중에" 가 되고, 빈 설정이라도 남긴다.
+   * 위젯이 전체화면이면(full) 탭 대신 세 섹션을 나란히 세 칸으로 펴서 한눈에 본다.
    */
-  public static SettingsDialog show(Stage owner) {
+  public static SettingsDialog show(Stage owner, boolean full) {
     boolean firstRun = !exists();
     SettingsDialog settings = load();
 
@@ -885,10 +904,30 @@ public final class SettingsDialog {
 
     HBox fontTitle = section("글꼴", () -> usePretendard.setSelected(true));
 
-    // ── 전체화면 ── 다음에 창에 포커스가 들어올 때부터
-    CheckBox startFull = new CheckBox("포커스될 때 전체화면으로 띄우기 (떠 있는 동안엔 F11 로 오가)");
+    // ── 단축키로 여는 화면 ── 다음에 창을 열 때부터
+    ToggleGroup openGroup = new ToggleGroup();
+    RadioButton openWidget = new RadioButton("기본 위젯");
+    RadioButton openAurora = new RadioButton("오로라 (화면 가운데 빛 속 입력창 — ← → ↓ 로 기본 위젯)");
+    for (RadioButton rb : List.of(openWidget, openAurora)) {
+      rb.setToggleGroup(openGroup);
+      rb.getStyleClass().add("dialog-path-label");
+    }
+    (settings.hotkeyAurora() ? openAurora : openWidget).setSelected(true);
+    VBox openRow = new VBox(6, openWidget, openAurora);
+
+    CheckBox auroraTodos = new CheckBox("오로라에 할 일 띄우기 (안 한 건 밑에서, 끝낸 건 위에서 떠다녀)");
+    auroraTodos.getStyleClass().add("dialog-path-label");
+    auroraTodos.setSelected(settings.auroraTodos);
+
+    HBox openTitle = section("단축키로 여는 화면 (Win+Alt+Space)", () -> {
+      openWidget.setSelected(true);
+      auroraTodos.setSelected(true);
+    });
+
+    // ── 전체화면 ── 다음에 창을 열 때부터
+    CheckBox startFull = new CheckBox("기본 위젯을 열 때 전체화면으로 띄우기 (떠 있는 동안엔 F11 로 오가)");
     startFull.getStyleClass().add("dialog-path-label");
-    startFull.setSelected(settings.focusFullScreen);
+    startFull.setSelected(settings.openFullScreen);
 
     CheckBox escFull = new CheckBox("전체화면에서 Esc 로 전체화면 풀기 (끄면 Esc 는 나가기 · 숨기기만)");
     escFull.getStyleClass().add("dialog-path-label");
@@ -1004,7 +1043,9 @@ public final class SettingsDialog {
       settings.widgetOpacity = clampOpacity(opacity.getValue());
       settings.widgetTheme = pickedTheme(themeGroup).id;
       settings.usePretendard = usePretendard.isSelected();
-      settings.focusFullScreen = startFull.isSelected();
+      settings.hotkeyOpens = openAurora.isSelected() ? HOTKEY_AURORA : HOTKEY_WIDGET;
+      settings.auroraTodos = auroraTodos.isSelected();
+      settings.openFullScreen = startFull.isSelected();
       settings.escExitsFullScreen = escFull.isSelected();
       // 파트너를 바꾸면 호감도가 흔들리고, 수다 화면도 새 파트너랑 얘기하던 자리로 돌아간다
       if (partner != originalPartner) {
@@ -1055,7 +1096,7 @@ public final class SettingsDialog {
       return Arrays.asList(new ArrayList<>(roots), new LinkedHashMap<>(mascotPaths), new LinkedHashSet<>(fitWidth),
           hideMascot.isSelected(), reserveSpace.isSelected(),
           themeGroup.getSelectedToggle(), partnerGroup.getSelectedToggle(), displayGroup.getSelectedToggle(), todoModeGroup.getSelectedToggle(),
-          colors, opacity.getValue(), usePretendard.isSelected(), startFull.isSelected(), escFull.isSelected(), showLiking.isSelected(), emojis,
+          colors, opacity.getValue(), usePretendard.isSelected(), openAurora.isSelected(), auroraTodos.isSelected(), startFull.isSelected(), escFull.isSelected(), showLiking.isSelected(), emojis,
           useNotes.isSelected(), singleClick.isSelected(), useTyping.isSelected(), typingMs.getText());
     };
     List<Object> originalForm = form.get();
@@ -1071,6 +1112,7 @@ public final class SettingsDialog {
         themeTitle, themeRow,
         opacityTitle, opacityRow, opacityHint,
         fontTitle, usePretendard,
+        openTitle, openRow, auroraTodos,
         fullTitle, startFull, escFull,
         todoTitle, todoModeRow, pickerRow);
     VBox characterPage = page(
@@ -1104,7 +1146,9 @@ public final class SettingsDialog {
     lockedHint.setWrapText(true);
     lockedHint.setVisible(!hasKey);
     lockedHint.setManaged(!hasKey);
-    scroll.setContent(startPage);
+    // 전체화면이면 섹션들이 세 칸에 따로 들어간다 (column) — 한 노드는 한 자리에만
+    if (!full)
+      scroll.setContent(startPage);
     pageGroup.selectedToggleProperty().addListener((obs, was, is) -> {
       if (is != null) {
         scroll.setContent((VBox) is.getUserData());
@@ -1112,10 +1156,22 @@ public final class SettingsDialog {
       }
     });
 
-    VBox root = new VBox(12, heading, pageRow, lockedHint, scroll, error, buttons);
+    VBox root;
+    if (full) {
+      // 세 칸 — 칸마다 제목을 붙박고 그 밑만 따로 굴린다. 키가 없으면 캐릭터 칸은 잠근다 (탭과 같은 이치)
+      VBox characterColumn = column("🌸 캐릭터", characterPage);
+      characterColumn.setDisable(!hasKey);
+      HBox columns = new HBox(18, column("🎨 위젯 UI", widgetPage), characterColumn, column("📁 훑을 폴더", folderPage));
+      VBox.setVgrow(columns, Priority.ALWAYS);
+      root = new VBox(12, heading, lockedHint, columns, error, buttons);
+      Rectangle2D screen = Screen.getPrimary().getVisualBounds();
+      root.setPrefSize(Math.min(FULL_WIDTH, screen.getWidth() * 0.94), Math.min(FULL_HEIGHT, screen.getHeight() * 0.92));
+    } else {
+      root = new VBox(12, heading, pageRow, lockedHint, scroll, error, buttons);
+      root.setPrefWidth(520);
+    }
     root.getStyleClass().add("dialog-root");
     root.setPadding(new Insets(22));
-    root.setPrefWidth(520);
 
     Scene scene = new Scene(root);
     scene.setFill(Color.TRANSPARENT);
@@ -1192,6 +1248,21 @@ public final class SettingsDialog {
     HBox row = new HBox(8, label, spacer, button);
     row.setAlignment(Pos.CENTER_LEFT);
     return row;
+  }
+
+  /** 전체화면 설정의 한 칸 — 섹션 제목 밑에 그 섹션을 따로 굴린다. 세 칸이 너비를 똑같이 나눈다 */
+  private static VBox column(String title, VBox page) {
+    Label label = new Label(title);
+    label.getStyleClass().add("notice-title");
+    ScrollPane scroll = new ScrollPane(page);
+    scroll.getStyleClass().add("keys-scroll");
+    scroll.setFitToWidth(true);
+    scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+    VBox.setVgrow(scroll, Priority.ALWAYS);
+    VBox column = new VBox(10, label, scroll);
+    column.setPrefWidth(0);
+    HBox.setHgrow(column, Priority.ALWAYS);
+    return column;
   }
 
   /** 섹션 하나 — 칸들을 세로로 쌓는다. 오른쪽은 스크롤 막대 자리 */

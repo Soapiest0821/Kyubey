@@ -51,6 +51,12 @@ public class MarkdownView extends ScrollPane {
 
   private final VBox blocks = new VBox(6);
 
+  /** 이 단계 제목(## 면 2)마다 칸을 새로 판다. 0 이면 칸 없이 쭉 그린다 */
+  private int sectionLevel = 0;
+
+  /** 지금 그리는 블록이 들어갈 곳 — 칸을 나누면 마지막 칸, 아니면 blocks */
+  private VBox target = blocks;
+
   /** 복사할 때 쓰려고 들고 있는 원문 */
   private String source = "";
 
@@ -70,8 +76,18 @@ public class MarkdownView extends ScrollPane {
   public void setMarkdown(String markdown) {
     source = markdown == null ? "" : markdown;
     blocks.getChildren().clear();
+    target = blocks;
     render(source);
     setVvalue(0); // 새 답은 맨 위부터 보여준다
+  }
+
+  /**
+   * 같은 단계 제목마다 칸(md-section)을 나눠 그린다. 칸이 구분선 노릇을 하니 이때 --- 는 안 그린다.
+   * 다음 setMarkdown 부터 적용.
+   */
+  public void setSectionLevel(int level) {
+    sectionLevel = level;
+    blocks.setSpacing(level > 0 ? 12 : 6); // 칸끼리는 조금 더 띄운다
   }
 
   /** Ctrl+Shift+C 로 복사할 원문 (그려진 게 아니라 받은 그대로) */
@@ -111,13 +127,16 @@ public class MarkdownView extends ScrollPane {
 
       if (HORIZONTAL_RULE.matcher(trimmed).matches()) {
         flush(paragraph);
-        addRule();
+        if (sectionLevel == 0)
+          addRule();
         continue;
       }
 
       Matcher heading = HEADING.matcher(trimmed);
       if (heading.matches()) {
         flush(paragraph);
+        if (sectionLevel > 0 && heading.group(1).length() == sectionLevel)
+          openSection();
         int level = Math.min(heading.group(1).length(), 3); // #### 이하는 ### 취급
         addFlow(heading.group(2), "md-h" + level, "md-t-h" + level);
         continue;
@@ -157,6 +176,12 @@ public class MarkdownView extends ScrollPane {
     paragraph.clear();
   }
 
+  private void openSection() {
+    target = new VBox(6);
+    target.getStyleClass().add("md-section");
+    blocks.getChildren().add(target);
+  }
+
   private static int depthOf(String indent) {
     return indent.replace("\t", "  ").length() / 2;
   }
@@ -172,7 +197,7 @@ public class MarkdownView extends ScrollPane {
     TextFlow flow = new TextFlow();
     flow.getStyleClass().add(blockClass);
     appendInline(flow, text, textClass);
-    blocks.getChildren().add(flow);
+    target.getChildren().add(flow);
     return flow;
   }
 
@@ -189,7 +214,7 @@ public class MarkdownView extends ScrollPane {
     HBox row = new HBox(6, bullet, body);
     row.setAlignment(Pos.TOP_LEFT); // 마커가 첫 줄에 붙게 (기본값이면 세로 가운데로 내려간다)
     row.setPadding(new Insets(0, 0, 0, depth * INDENT_STEP));
-    blocks.getChildren().add(row);
+    target.getChildren().add(row);
   }
 
   private void addCodeBlock(String code) {
@@ -197,14 +222,14 @@ public class MarkdownView extends ScrollPane {
     block.getStyleClass().add("md-code-block");
     block.setWrapText(true);
     block.setMaxWidth(Double.MAX_VALUE);
-    blocks.getChildren().add(block);
+    target.getChildren().add(block);
   }
 
   private void addRule() {
     Region rule = new Region();
     rule.getStyleClass().add("md-hr");
     rule.setMaxWidth(Double.MAX_VALUE);
-    blocks.getChildren().add(rule);
+    target.getChildren().add(rule);
   }
 
   private static void appendInline(TextFlow flow, String text, String textClass) {

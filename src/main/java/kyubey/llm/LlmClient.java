@@ -64,6 +64,20 @@ public interface LlmClient {
     throw new UnsupportedOperationException("이 백엔드는 그림 속 글자를 못 읽어");
   }
 
+  /**
+   * 그림을 가장 적은 토큰으로 읽어 짧은 설명 글로 돌려준다. 수다에 사진을 보낼 때 한 장에 한 번만 부른다
+   * (ChatImage 참고). ask() 와 마찬가지로 JavaFX 스레드에서 부르면 안 된다.
+   *
+   * 빈 문자열은 "이 그림은 설명을 못 얻는다" 는 뜻이다 (필터에 막혔거나, 그림을 못 보는 백엔드).
+   * 다시 해봐야 소용없으니 부르는 쪽은 그림 없이 대화를 잇는다. 예외는 키 · 네트워크처럼 다시 해볼 만한 실패다.
+   *
+   * @param jpeg JPEG 바이트
+   * @throws Exception ask() 와 같다
+   */
+  default String describeImage(byte[] jpeg) throws Exception {
+    return "";
+  }
+
   /** 오간 말 한 줄. mine 이 true 면 내가 한 말, false 면 상대가 한 말 */
   record Message(boolean mine, String text) {
   }

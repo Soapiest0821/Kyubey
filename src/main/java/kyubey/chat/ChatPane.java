@@ -23,11 +23,13 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
+import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.TransferMode;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
@@ -36,9 +38,14 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.stage.FileChooser;
 import javafx.util.Duration;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -53,6 +60,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -64,6 +73,7 @@ import kyubey.ui.Emoji;
 import kyubey.ui.EmojiPicker;
 import kyubey.ui.Ime;
 import kyubey.ui.Theme;
+import kyubey.ui.Toast;
 
 /**
  * 오른쪽 아래 마도카를 누르면 열리는 수다 화면.
@@ -118,6 +128,10 @@ import kyubey.ui.Theme;
  * 말풍선 오른쪽 클릭: 복사 · 답장 · 수정 · 지우기. 지우는 건 화면에서만이다 — 마도카한테는 그대로
  * 들려줘서 대화 맥락은 안 바뀐다 (removeLine). 수정은 내 말만 — 고친 글이 마도카한테도 그대로 간다 (startEdit).
  * 말풍선을 왼쪽으로 밀면 그 말에 답장한다 — 누구 말이든 (swipeToReply).
+ *
+ * 사진은 붙여넣기 · 끌어놓기 · 📎 로 입력칸 위에 올려두고 Enter 로 보낸다 (attach). 마도카한테는 그림이
+ * 아니라 한 번 읽어둔 설명 글이 간다 — 왜 그렇게 하는지는 ChatImage, 읽는 자리는 describeFirst 참고.
+ * 사진을 달라고 하면 마도카가 웹에서 한 장 찾아 보낸다 (WebPicture).
  */
 public class ChatPane extends BorderPane {
 
@@ -341,6 +355,9 @@ public class ChatPane extends BorderPane {
   /** 처음 열었을 때 한 줄. 지난 대화가 남아 있으면 안 한다 (켤 때마다 인사가 쌓여서) */
   private static final String GREETING = "안녕~ 왔구나?";
 
+  /** 입력칸 위에 올려둔 사진의 높이 */
+  private static final double ATTACH_THUMB = 56;
+
   /** 답장 표시 · 인용에 보이는 글자 수 */
   private static final int REPLY_HINT_CHARS = 30;
 
@@ -439,6 +456,13 @@ public class ChatPane extends BorderPane {
   private final Label replyLabel = new Label();
   private final HBox replyBar = new HBox(6);
 
+  /** 입력칸 위에 올려둔 보낼 사진을 보여주는 줄. 없으면 숨는다 (showAttached) */
+  private final ImageView attachedView = new ImageView();
+  private final HBox attachBar = new HBox(8);
+
+  /** 입력칸 위에 올려둔 사진의 파일 자리. 없으면 null — 보내면 사진 말풍선이 되고 비워진다 (send) */
+  private String attached;
+
   /** 다음에 보낼 내 말이 답장할 말. 없으면 null — 보내면 첫 말풍선에 붙고 비워진다 (addLine) */
   private ChatHistory.Line replyTo;
 
@@ -489,6 +513,12 @@ public class ChatPane extends BorderPane {
 
   /** 다음에 올라갈 마도카 말풍선이 답장으로 짚을 내 말. addLine 이 쓰고 비운다 (ask) */
   private ChatHistory.Line quoteNext;
+
+  /** 마지막 말풍선 뒤에 붙일 사진. 없으면 null (say) */
+  private WebPicture.Found pictureNext;
+
+  /** 이번 실행에서 보낸 사진 주소 — "하나 더 줘" 에 같은 사진을 또 보내지 않게. 찾는 일은 뒤 스레드에서 한다 */
+  private final Set<String> sentPictures = ConcurrentHashMap.newKeySet();
 
   /** 처음 열 때만 인사한다 */
   private boolean greeted;
@@ -616,6 +646,11 @@ public class ChatPane extends BorderPane {
     scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
     // 말풍선을 눌러도 여기로 포커스가 넘어오면 Enter 가 안 먹혀서 아예 안 받게 해둔다
     scroll.setFocusTraversable(false);
+    // 맨 위까지 올리면 그 앞 말풍선을 한 묶음 더 그린다 (render 는 끝에서 drawLimit 줄만 그린다)
+    scroll.vvalueProperty().addListener((obs, was, now) -> {
+      if (now.doubleValue() <= 0 && was.doubleValue() > 0)
+        drawOlder();
+    });
 
     input.getStyleClass().add("chat-input");
 
@@ -630,7 +665,15 @@ public class ChatPane extends BorderPane {
     }));
     StackPane.setAlignment(emojiButton, Pos.CENTER_RIGHT);
     StackPane.setMargin(emojiButton, new Insets(0, 8, 0, 0));
-    StackPane inputBox = new StackPane(input, emojiButton);
+    // 그 왼쪽의 사진 단추 — 붙여넣기 · 끌어놓기 말고 파일로 고를 때
+    Button imageButton = new Button("📎");
+    imageButton.getStyleClass().add("chat-emoji-button");
+    imageButton.setFocusTraversable(false);
+    imageButton.setOnAction(e -> chooseImage());
+    StackPane.setAlignment(imageButton, Pos.CENTER_RIGHT);
+    StackPane.setMargin(imageButton, new Insets(0, 36, 0, 0));
+    input.getStyleClass().add("chat-input-attach");
+    StackPane inputBox = new StackPane(input, imageButton, emojiButton);
     inputRow.getChildren().setAll(inputBox);
     inputRow.setAlignment(Pos.CENTER_LEFT);
     inputRow.setPadding(new Insets(10, 0, 0, 0));
@@ -653,7 +696,35 @@ public class ChatPane extends BorderPane {
     replyBar.getStyleClass().add("chat-reply-bar");
     replyBar.setAlignment(Pos.CENTER_LEFT);
     showReplyBar(false);
-    VBox bottom = new VBox(replyBar, inputRow);
+
+    attachedView.setFitHeight(ATTACH_THUMB);
+    attachedView.setFitWidth(ATTACH_THUMB * 2);
+    attachedView.setPreserveRatio(true);
+    Region attachGap = new Region();
+    HBox.setHgrow(attachGap, Priority.ALWAYS);
+    Button cancelAttach = new Button("✕");
+    cancelAttach.getStyleClass().add("chat-reply-cancel");
+    cancelAttach.setFocusTraversable(false);
+    cancelAttach.setOnAction(e -> dropAttached());
+    attachBar.getChildren().addAll(attachedView, attachGap, cancelAttach);
+    attachBar.getStyleClass().add("chat-reply-bar");
+    attachBar.setAlignment(Pos.CENTER_LEFT);
+    showAttached(null);
+    VBox bottom = new VBox(replyBar, attachBar, inputRow);
+
+    // 탐색기나 브라우저에서 끌어다 놓은 그림
+    setOnDragOver(e -> {
+      if (holdsImage(e.getDragboard()))
+        e.acceptTransferModes(TransferMode.COPY);
+      e.consume();
+    });
+    setOnDragDropped(e -> {
+      Supplier<Image> dropped = imageIn(e.getDragboard());
+      if (dropped != null)
+        attach(dropped);
+      e.setDropCompleted(dropped != null);
+      e.consume();
+    });
 
     setPadding(PADDING);
     setTop(header);
@@ -835,6 +906,8 @@ public class ChatPane extends BorderPane {
 
     if (keep)
       archive.save(lines, affection.snapshot(liking));
+    else
+      lines.forEach(line -> ChatImage.delete(line.image));
     lines.clear();
     store.save(lines);
 
@@ -1089,6 +1162,9 @@ public class ChatPane extends BorderPane {
    * 배지와 알림은 이제 새 화면 몫이라 안 건드린다.
    */
   public void retire() {
+    // 보던 중에 딴 상대로 갈아타면 여기까지는 읽은 것 — 상대 목록 (PartnerFloat) 에 안 읽은 말로 남지 않게
+    if (reading())
+      markRead();
     retired = true;
     era++;
     silenceClock.stop();
@@ -1165,6 +1241,10 @@ public class ChatPane extends BorderPane {
         cancelReply();
         return;
       }
+      if (attached != null) {
+        dropAttached();
+        return;
+      }
       if (!onEscFull.getAsBoolean())
         exit();
     }
@@ -1174,6 +1254,15 @@ public class ChatPane extends BorderPane {
     if (e.getCode() == KeyCode.ENTER) {
       e.consume();
       send();
+      return;
+    }
+    // 복사해둔 게 그림이면 입력칸에 글로 넣는 대신 사진으로 올린다
+    if (e.isShortcutDown() && e.getCode() == KeyCode.V && editing == null) {
+      Supplier<Image> copied = imageIn(Clipboard.getSystemClipboard());
+      if (copied != null) {
+        e.consume();
+        attach(copied);
+      }
       return;
     }
     // 빈 입력칸에서 맨손 ← : 기본 화면으로 나간다. 수다 화면은 기본 화면 오른쪽에 있어서
@@ -1198,6 +1287,8 @@ public class ChatPane extends BorderPane {
    * 맨 앞이 \ 로 시작하면 ("\ㅗ ^^") 내 말이 비밀 쪽지 한 장으로 접혀 올라간다 (쪽지를 켠 설정일 때).
    * 마도카가 말하는 중에도 보낼 수 있다 — 말풍선은 바로 올라가고, 답은 마도카가 다 말한 뒤에 한다 (queued).
    * 먼저 말 걸기·고백은 그 사이엔 안 받는다.
+   * 사진을 올려뒀으면 사진 말풍선이 먼저 올라가고 친 글이 뒤따른다. 글 없이 사진만 보내도 된다 —
+   * 이때 \ 는 끊기로만 읽는다 (사진만 올리고 마도카는 안 부르기).
    */
   private void send() {
     if (editing != null) {
@@ -1205,25 +1296,30 @@ public class ChatPane extends BorderPane {
       return;
     }
     String raw = input.getText().stripTrailing();
-    if (asking && (raw.strip().equals("\\") || raw.strip().equals("\\\\")))
+    boolean picture = attached != null;
+    if (!picture && asking && (raw.strip().equals("\\") || raw.strip().equals("\\\\")))
       return;
-    if (raw.strip().equals("\\")) {
+    if (!picture && raw.strip().equals("\\")) {
       input.clear();
       callOut();
       return;
     }
-    if (raw.strip().equals("\\\\")) {
+    if (!picture && raw.strip().equals("\\\\")) {
       input.clear();
       confess();
       return;
     }
     boolean note = useNotes && startsWithNote(raw);
     List<String> pieces = splitMine(raw);
-    if (pieces.isEmpty())
+    if (pieces.isEmpty() && !picture)
       return;
 
     input.clear();
-    if (note) {
+    if (picture)
+      addImageLine();
+    if (pieces.isEmpty()) {
+      // 사진뿐이라 올릴 글이 없다
+    } else if (note) {
       // 쪽지는 \ 로 끊어 쳤어도 한 장으로 접는다
       addLine(String.join("\n", pieces), true, System.currentTimeMillis(), true);
     } else {
@@ -1238,6 +1334,79 @@ public class ChatPane extends BorderPane {
     }
     pending = true;
     ask();
+  }
+
+  /** 올려둔 사진을 말풍선으로 올린다 */
+  private void addImageLine() {
+    String path = attached;
+    showAttached(null);
+    addLine(ChatImage.TEXT, true, System.currentTimeMillis(), false, path, null);
+  }
+
+  /**
+   * 건네받은 것(클립보드 · 끌어온 것)에 그림이 들었는지. 끄는 동안 계속 불리니 내용은 안 꺼내 본다.
+   * 글이 같이 든 건 안 집는다 — 엑셀 칸이나 워드 글을 복사하면 글과 함께 그림도 들어오는데,
+   * 그때 원하는 건 글이라서 (Capture.clipboardImage 와 같은 결).
+   */
+  private static boolean holdsImage(Clipboard board) {
+    if (board.hasFiles() && ChatImage.firstImage(board.getFiles()) != null)
+      return true;
+    return !board.hasString() && board.hasImage();
+  }
+
+  /** 건네받은 것에 든 그림. 없으면 null. 건네받은 건 이 자리를 벗어나면 비니 내용을 지금 읽어 들고 간다 */
+  private static Supplier<Image> imageIn(Clipboard board) {
+    if (!holdsImage(board))
+      return null;
+    File file = board.hasFiles() ? ChatImage.firstImage(board.getFiles()) : null;
+    if (file != null)
+      return () -> ChatImage.load(file);
+    Image image = board.getImage();
+    return image == null ? null : () -> image;
+  }
+
+  /** 📎 — 파일에서 사진을 고른다 */
+  private void chooseImage() {
+    FileChooser chooser = new FileChooser();
+    chooser.setTitle("보낼 사진 고르기");
+    chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("그림", ChatImage.FILTER));
+    File file = chooser.showOpenDialog(getScene().getWindow());
+    if (file != null)
+      attach(() -> ChatImage.load(file));
+    Platform.runLater(() -> Ime.focus(input));
+  }
+
+  /** 사진을 줄여 저장하고 입력칸 위에 올려둔다. 이미 올려둔 게 있으면 새 사진으로 갈아끼운다 */
+  private void attach(Supplier<Image> source) {
+    String dir = profile.path(ChatImage.DIR);
+    Task<String> task = new Task<>() {
+      @Override
+      protected String call() throws Exception {
+        return ChatImage.save(source.get(), dir);
+      }
+    };
+    task.setOnSucceeded(e -> {
+      ChatImage.delete(attached);
+      showAttached(task.getValue());
+    });
+    task.setOnFailed(e -> Toast.show("이 그림은 못 읽겠어"));
+    Thread worker = new Thread(task, "chat-image");
+    worker.setDaemon(true);
+    worker.start();
+  }
+
+  /** 올려둔 사진을 내린다 */
+  private void dropAttached() {
+    ChatImage.delete(attached);
+    showAttached(null);
+  }
+
+  /** 입력칸 위 사진 줄을 path 로 맞춘다. null 이면 숨긴다 */
+  private void showAttached(String path) {
+    attached = path;
+    attachedView.setImage(path == null ? null : new Image(new File(path).toURI().toString(), 0, ATTACH_THUMB * 2, true, true));
+    attachBar.setVisible(path != null);
+    attachBar.setManaged(path != null);
   }
 
   /**
@@ -1320,7 +1489,7 @@ public class ChatPane extends BorderPane {
    * 헷갈리니, 첫 말풍선을 그 말에 대한 답장으로 올린다.
    */
   private void ask() {
-    if (lines.isEmpty())
+    if (lines.isEmpty() || describeFirst())
       return;
     ChatHistory.Line target = null;
     for (int i = lines.size() - 1; i >= 0; i--) {
@@ -1330,7 +1499,79 @@ public class ChatPane extends BorderPane {
         break;
       }
     }
-    request(window(), 0, false, null, target);
+    request(window(), 0, false, null, target, WebPicture.asked(unanswered(), recentTalk()));
+  }
+
+  /** 사진 얘기 중인지 볼 줄 수. 조르는 동안 말이 몇 번 오가도 끊기지 않을 만큼 */
+  private static final int PICTURE_TALK_LINES = 16;
+
+  /** 최근 말들. 사진 줄은 글이 ChatImage.TEXT 라서 그대로 사진 얘기로 잡힌다 */
+  private String recentTalk() {
+    StringBuilder out = new StringBuilder();
+    for (ChatHistory.Line line : lines.subList(Math.max(0, lines.size() - PICTURE_TALK_LINES), lines.size()))
+      out.append(line.text).append('\n');
+    return out.toString();
+  }
+
+  /** 아직 답을 못 받은 내 말을 한 줄로 잇는다. 말풍선을 끊어 친 말도 이어서 봐야 사진 달라는 말이 보인다 */
+  private String unanswered() {
+    StringBuilder out = new StringBuilder();
+    for (int i = lines.size() - 1; i >= 0 && lines.get(i).mine; i--) {
+      if (lines.get(i).image == null)
+        out.insert(0, lines.get(i).text + " ");
+    }
+    return out.toString();
+  }
+
+  /**
+   * 아직 안 읽은 사진이 있으면 그것부터 읽히고 true 를 돌려준다. 다 읽으면 ask 로 돌아와 답을 받는다.
+   *
+   * 답을 기다리는 것과 똑같이 친다 — asking 을 켜둬서 그 사이 보낸 말은 queued 로 미뤄지고,
+   * 실패하면 pending 을 켜둔 채 물러나 다음 포커스 때 여기서부터 다시 한다. 읽은 사진은 파일에
+   * 남으니 다시 해도 또 읽히지 않는다. 파일이 없어진 사진은 빈 설명으로 넘어간다.
+   */
+  private boolean describeFirst() {
+    ChatHistory.Line target = null;
+    for (ChatHistory.Line line : lines) {
+      if (line.image != null && line.caption == null) {
+        target = line;
+        break;
+      }
+    }
+    if (target == null || asking || !llm.isReady())
+      return false;
+
+    ChatHistory.Line line = target;
+    int startedIn = era;
+    asking = true;
+    Task<String> task = new Task<>() {
+      @Override
+      protected String call() throws Exception {
+        try {
+          return llm.describeImage(Files.readAllBytes(Path.of(line.image)));
+        } catch (NoSuchFileException gone) {
+          return "";
+        }
+      }
+    };
+    task.setOnSucceeded(e -> {
+      if (startedIn != era)
+        return;
+      line.caption = task.getValue().strip();
+      store.save(lines);
+      asking = false;
+      queued = false;
+      ask();
+    });
+    task.setOnFailed(e -> {
+      System.err.println("[chat] 사진 읽기 실패: " + task.getException());
+      if (startedIn == era)
+        settleQueued();
+    });
+    Thread worker = new Thread(task, "madoka-image");
+    worker.setDaemon(true);
+    worker.start();
+    return true;
   }
 
   /**
@@ -1349,12 +1590,15 @@ public class ChatPane extends BorderPane {
    * (깜짝 긁기, withNotes). 쪽지를 끈 설정이면 둘 다 보통 말풍선으로 풀어 올린다.
    */
   private void request(List<LlmClient.Message> snapshot, long earlierMs, boolean asNote, Runnable onAnswered) {
-    request(snapshot, earlierMs, asNote, onAnswered, null);
+    request(snapshot, earlierMs, asNote, onAnswered, null, false);
   }
 
-  /** quote 가 있으면 첫 말풍선을 그 말에 대한 답장으로 올린다 (ask) */
+  /**
+   * quote 가 있으면 첫 말풍선을 그 말에 대한 답장으로 올린다 (ask).
+   * picture 면 이번 턴에만 사진 보내는 법을 일러주고, 답에 표시가 오면 찾아서 말풍선 뒤에 붙인다 (WebPicture)
+   */
   private void request(List<LlmClient.Message> snapshot, long earlierMs, boolean asNote, Runnable onAnswered,
-      ChatHistory.Line quote) {
+      ChatHistory.Line quote, boolean picture) {
     if (asking || snapshot.isEmpty())
       return;
 
@@ -1366,27 +1610,39 @@ public class ChatPane extends BorderPane {
 
     // 시각을 물려 찍는 말이면 [지금 시각] 도 그 시각으로 — 마도카는 그때 보낸 말을 쓰는 거라서
     long saidAt = System.currentTimeMillis() - earlierMs;
-    String persona = withNotes(withNow(withAffection(withTodos(persona(), snapshot), snapshot), saidAt), asNote);
+    String persona = WebPicture.withGuide(
+        withNotes(withNow(withAffection(withTodos(persona(), snapshot), snapshot), saidAt), asNote), picture, profile);
+    String pictureDir = profile.path(ChatImage.DIR);
     int startedIn = era;
     asking = true;
 
-    Task<String> task = new Task<>() {
+    Task<WebPicture.Reply> task = new Task<>() {
       @Override
-      protected String call() throws Exception {
-        return llm.chat(persona, snapshot, LlmClient.Mode.FAST, true);
+      protected WebPicture.Reply call() throws Exception {
+        String raw = llm.chat(persona, snapshot, LlmClient.Mode.FAST, true);
+        return WebPicture.resolve(raw, picture && !affectionDrops(raw), pictureDir, sentPictures);
       }
     };
 
     task.setOnSucceeded(e -> {
+      WebPicture.Reply answer = task.getValue();
       // 기다리는 사이에 대화를 지웠으면 이 답은 갈 데가 없다 (정리는 clearChat 이 이미 해뒀다)
-      if (startedIn != era)
+      if (startedIn != era) {
+        if (answer.picture() != null)
+          ChatImage.delete(answer.picture().path());
         return;
+      }
       // 첫 말풍선이 찍힐 시각 — 호감도 기록도 같은 시각으로 남겨서, 기록을 두 번 누르면 이 말풍선으로 간다
       long at = System.currentTimeMillis() - earlierMs;
-      String reply = takeAffection(task.getValue(), at);
+      String reply = takeAffection(answer.text(), at);
       // 쪽지를 접어 보냈으면 쪽지 하나만 — 같이 붙여 보낸 말은 버린다
       String marked = useNotes ? noteIn(reply) : null;
       List<String> bubbles = split(marked != null ? marked : unwrapNotes(reply));
+      // 사진 표시만 달고 말이 없었어도 사진은 보낸다 — 찾으면서 적은 설명을 말 대신 올린다
+      if (bubbles.isEmpty() && answer.picture() != null)
+        bubbles.add(answer.picture().caption());
+      if (answer.missed())
+        bubbles.add(WebPicture.MISSED);
       if (bubbles.isEmpty()) {
         // 내용 없이 빈 답이 온 경우. 빈 말풍선을 올려봐야 대화만 끊겨 보이니
         // 실패했을 때와 똑같이 pending 을 켜둔 채 물러난다 (다음 포커스 때 다시 던진다).
@@ -1408,6 +1664,7 @@ public class ChatPane extends BorderPane {
       // 내 말이 끼어들면 주고받은 순서가 엉켜서. 그 사이 보낸 말은 queued 로 미뤄둔다.
       if (quote != null && lines.contains(quote))
         quoteNext = quote;
+      pictureNext = answer.picture();
       say(bubbles, 0, startedIn, earlierMs, note, at);
     });
 
@@ -1693,6 +1950,11 @@ public class ChatPane extends BorderPane {
     addLine(bubbles.get(index), false, index == 0 ? firstAt : System.currentTimeMillis() - earlierMs, note);
 
     if (index + 1 >= bubbles.size()) {
+      if (pictureNext != null) {
+        WebPicture.Found picture = pictureNext;
+        pictureNext = null;
+        addLine(ChatImage.TEXT, false, System.currentTimeMillis() - earlierMs, false, picture.path(), picture.caption());
+      }
       asking = false;
       // 말하는 사이 끼어든 말이 있으면 바로 그 중 마지막 말에 답장한다 (ask 가 짚는다)
       if (queued) {
@@ -1752,8 +2014,15 @@ public class ChatPane extends BorderPane {
    * note 면 비밀 쪽지 — 말풍선엔 접힌 쪽지만 보이고, 알림에도 내용 대신 쪽지가 왔다고만 띄운다.
    */
   private void addLine(String text, boolean mine, long at, boolean note) {
+    addLine(text, mine, at, note, null, null);
+  }
+
+  /** image 가 있으면 사진 한 장을 올리는 줄이다. caption 이 null 이면 아직 안 읽은 사진이다 (describeFirst) */
+  private void addLine(String text, boolean mine, long at, boolean note, String image, String caption) {
     ChatHistory.Line line = new ChatHistory.Line(mine, text, at);
     line.note = note;
+    line.image = image;
+    line.caption = caption;
     line.cutIn = mine && asking;
     // 끼어든 말에 하는 답은 첫 말풍선이 그 말을 짚는다 (ask)
     if (!mine && quoteNext != null) {
@@ -1798,6 +2067,25 @@ public class ChatPane extends BorderPane {
    */
   private boolean reading() {
     return getScene() != null;
+  }
+
+  /** 이 화면 밖에서 올라와 아직 안 읽은 상대 말 수 */
+  public int unread() {
+    return unread;
+  }
+
+  /**
+   * 화면이 안 떠 있는 상대의 안 읽은 말 수 — 파일에서 센다. 마지막으로 그 수다를 본 때 (Presence.readAt)
+   * 뒤에 붙은 상대 말 (화면에서 지운 줄 빼고)
+   */
+  public static int unreadOf(ChatProfile profile) {
+    long readAt = new Presence(profile.path("presence.json")).load().readAt;
+    int count = 0;
+    for (ChatHistory.Line line : new ChatHistory(profile.path("chat.json")).load()) {
+      if (!line.mine && !line.hidden && line.at > readAt)
+        count++;
+    }
+    return count;
   }
 
   /** 안 읽은 수를 고쳐 쓰고 Main 한테 알린다. 달라진 게 없으면 조용히 넘어간다 */
@@ -1985,6 +2273,17 @@ public class ChatPane extends BorderPane {
     return m.replaceAll("").strip();
   }
 
+  /** 이 답으로 호감도가 줄어드는지. 줄어드는 답엔 사진을 안 붙인다 — 화나서 깎으면서 사진을 주면 앞뒤가 안 맞는다 */
+  static boolean affectionDrops(String raw) {
+    if (raw == null)
+      return false;
+    Matcher m = AFFECTION_MARK.matcher(raw);
+    int delta = 0;
+    while (m.find())
+      delta += ("-".equals(m.group(1)) ? -1 : 1) * Integer.parseInt(m.group(2));
+    return delta < 0;
+  }
+
   /** 한 번에 이만큼 넘게 오르면 마도카가 그 말에 하트를 단다 */
   private static final int HEART_STEP = 3;
 
@@ -2166,7 +2465,7 @@ public class ChatPane extends BorderPane {
     for (int i = 0; i < order.size(); i++) {
       ChatHistory.Line line = order.get(i);
       // 쪽지는 보낸 모양 그대로 들려준다 — 쪽지로 보냈다는 걸 마도카도 알게
-      String text = line.note ? "[[쪽지:" + line.text + "]]" : line.text;
+      String text = line.note ? "[[쪽지:" + line.text + "]]" : ChatImage.spoken(line);
       // 마도카가 단 답장 표시는 안 들려준다 — 바로 앞에 그 말이 오도록 물려놨고, 따라 쓰면 곤란해서
       if (line.mine && line.replyText != null)
         text = replyPrefix(line, start, i >= fresh) + text;
@@ -2309,7 +2608,7 @@ public class ChatPane extends BorderPane {
     sb.append(memo.isBlank() ? "(아직 없음)" : memo);
     sb.append("\n\n[새로 오간 말]\n");
     for (ChatHistory.Line line : pile)
-      sb.append((line.mine ? "상대" : name) + (line.note ? "(비밀 쪽지): " : ": ")).append(line.text).append("\n");
+      sb.append((line.mine ? "상대" : name) + (line.note ? "(비밀 쪽지): " : ": ")).append(ChatImage.spoken(line)).append("\n");
     return sb.toString();
   }
 
@@ -2338,6 +2637,20 @@ public class ChatPane extends BorderPane {
    * 한 줄만 끼워 넣는 길을 따로 두면 금세 어긋난다. 길어야 수백 줄이라 값도 싸다.
    */
   private void render() {
+    render(true);
+  }
+
+  /**
+   * 한 번에 그리는 말풍선 수. 수백 줄을 통째로 그리면 (말풍선 하나에 노드 열 몇 개 + 글자 배치)
+   * 수다 화면을 열거나 상대를 갈아탈 때 한참 멈춘다. 끝에서 이만큼만 그리고, 맨 위로 올리면 더 그린다 (drawOlder)
+   */
+  private static final int DRAW_PAGE = 40;
+  /** 끝에서 몇 줄(화면에 보이는 줄 기준)까지 그릴지. 이어 붙인 줄(append)만큼 같이 는다 */
+  private int drawLimit = DRAW_PAGE;
+  /** 지금 그려진 것보다 앞에 안 그린 줄이 남아 있는지 */
+  private boolean olderLeft;
+
+  private void render(boolean toBottom) {
     log.getChildren().clear();
     rows.clear();
 
@@ -2347,10 +2660,16 @@ public class ChatPane extends BorderPane {
       if (!line.hidden)
         shown.add(line);
 
+    int from = Math.max(0, shown.size() - drawLimit);
+    olderLeft = from > 0;
     drawnDay = null;
+    // 파스텔 무지개 차례가 그리는 범위에 따라 바뀌지 않게, 안 그린 앞쪽 상대 말도 센다
     theirsDrawn = 0;
+    for (int i = 0; i < from; i++)
+      if (!shown.get(i).mine)
+        theirsDrawn++;
     lastDrawn = null;
-    for (int i = 0; i < shown.size(); i++) {
+    for (int i = from; i < shown.size(); i++) {
       ChatHistory.Line line = shown.get(i);
       LocalDateTime when = when(line);
 
@@ -2366,7 +2685,41 @@ public class ChatPane extends BorderPane {
       lastDrawn = line;
     }
 
-    scrollToBottom();
+    if (toBottom)
+      scrollToBottom();
+  }
+
+  /** 맨 위까지 올렸을 때 — 앞 말풍선을 DRAW_PAGE 줄 더 그리고, 보던 줄이 제자리에 남게 스크롤을 맞춘다 */
+  private void drawOlder() {
+    if (!olderLeft)
+      return;
+    double before = log.getBoundsInLocal().getHeight();
+    drawLimit += DRAW_PAGE;
+    render(false);
+    Platform.runLater(() -> {
+      scroll.applyCss();
+      scroll.layout();
+      double content = log.getBoundsInLocal().getHeight();
+      double view = scroll.getViewportBounds().getHeight();
+      if (content > view)
+        scroll.setVvalue(Math.max(0, Math.min(1, (content - before) / (content - view))));
+    });
+  }
+
+  /** line 이 아직 안 그려졌으면 (오래돼서 앞쪽에 있으면) 그 줄까지 넓혀 다시 그린다. 지운 줄이면 그대로 */
+  private void ensureDrawn(ChatHistory.Line line) {
+    if (line == null || line.hidden || rows.containsKey(line))
+      return;
+    int fromEnd = 0;
+    for (int i = lines.size() - 1; i >= 0; i--) {
+      if (lines.get(i).hidden)
+        continue;
+      fromEnd++;
+      if (lines.get(i) == line)
+        break;
+    }
+    drawLimit = Math.max(drawLimit, fromEnd);
+    render(false);
   }
 
   /** 맨 끝까지 그린 날짜 · 그린 줄 — 이어 그릴 때(append) 이어받는다. render 가 채운다 */
@@ -2413,6 +2766,8 @@ public class ChatPane extends BorderPane {
     if (!line.mine)
       theirsDrawn++;
     lastDrawn = line;
+    // 다시 그릴 때 (render) 이어 붙인 줄 때문에 앞쪽이 잘려 나가지 않게
+    drawLimit++;
 
     scrollToBottom();
   }
@@ -2426,6 +2781,7 @@ public class ChatPane extends BorderPane {
   /** 호감도 기록을 두 번 누르면 — 그 기록을 부른 말풍선으로 가서 깜빡인다. 못 찾으면 (지웠거나 접혔으면) false */
   private boolean jumpTo(Affection.Change change) {
     ChatHistory.Line line = lineOf(lines, change);
+    ensureDrawn(line);
     Node row = line == null ? null : rows.get(line);
     if (row == null)
       return false;
@@ -2497,8 +2853,11 @@ public class ChatPane extends BorderPane {
    */
   private HBox bubble(ChatHistory.Line line, LocalDateTime at, int theirsIndex) {
     boolean mine = line.mine;
+    Region picture = line.image == null ? null : ChatImage.bubble(line);
     Region label;
-    if (line.note) {
+    if (picture != null) {
+      label = picture;
+    } else if (line.note) {
       // 접힌 쪽지 — 열면 열어봤다고 남기고 다시 그린다
       label = SecretNote.bubble(line, name(), noteSingleClick, () -> {
         store.save(lines);
@@ -2671,9 +3030,14 @@ public class ChatPane extends BorderPane {
 
   /** 반응 칩에 마우스를 1초 대고 있으면 단 사람 이름을 띄운다 */
   private static void whoReacted(Label chip, String text) {
-    Tooltip tip = new Tooltip(text);
-    tip.setShowDelay(Duration.seconds(1));
-    chip.setTooltip(tip);
+    // 말풍선마다 칩이 둘씩이라 Tooltip 을 미리 다 만들면 그리기가 굼떠진다 — 처음 마우스가 올라올 때 단다
+    chip.addEventHandler(MouseEvent.MOUSE_ENTERED, e -> {
+      if (chip.getTooltip() != null)
+        return;
+      Tooltip tip = new Tooltip(text);
+      tip.setShowDelay(Duration.seconds(1));
+      chip.setTooltip(tip);
+    });
   }
 
   /**
@@ -2717,7 +3081,10 @@ public class ChatPane extends BorderPane {
     MenuItem copy = new MenuItem("복사");
     copy.setOnAction(e -> {
       ClipboardContent content = new ClipboardContent();
-      content.putString(line.text);
+      if (line.image != null && new File(line.image).exists())
+        content.putImage(new Image(new File(line.image).toURI().toString()));
+      else
+        content.putString(line.text);
       Clipboard.getSystemClipboard().setContent(content);
     });
     MenuItem reply = new MenuItem("답장");
@@ -2730,8 +3097,8 @@ public class ChatPane extends BorderPane {
     if (!line.mine)
       menu.getItems().addAll(react, new SeparatorMenuItem());
     menu.getItems().addAll(copy, reply);
-    // 고칠 수 있는 건 내가 한 보통 말뿐이다 — 쪽지는 접힌 채라 고칠 글이 안 보인다
-    if (line.mine && !line.note)
+    // 고칠 수 있는 건 내가 한 보통 말뿐이다 — 쪽지는 접힌 채라 고칠 글이 안 보이고, 사진엔 고칠 글이 없다
+    if (line.mine && !line.note && line.image == null)
       menu.getItems().add(edit);
     menu.getItems().add(remove);
     return menu;
@@ -2834,6 +3201,7 @@ public class ChatPane extends BorderPane {
 
   /** 답장한 말 · 걸어둔 답장의 원래 말로 가서 깜빡인다. 지웠거나 오래돼서 잘려 나갔으면 가만히 있는다 */
   private void jumpToOrigin(ChatHistory.Line line) {
+    ensureDrawn(line);
     Node row = line == null ? null : rows.get(line);
     if (row != null)
       scrollTo(scroll, row);

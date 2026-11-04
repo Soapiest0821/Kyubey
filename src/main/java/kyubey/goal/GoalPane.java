@@ -12,10 +12,14 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.RadioMenuItem;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
@@ -53,7 +57,11 @@ import java.util.function.Consumer;
  *    안 쓰면 입력칸 Enter 가 고른 칸 밑에 친 이름으로 칸을 붙이고, 쪼개기 · 물어보기 · 메모 자동 생성이 빠진다
  *  - 관계도 (GoalStore.GRAPH): 중심 칸 + 아무 칸끼리나 잇는 그래프 (GraphMap). 파트너는 안 쓴다.
  *    고른 칸에서 N 은 이어진 칸, 아무것도 안 고르고 (빈 데 클릭 · Esc) N 은 따로 선 칸, Ctrl+끌기를 다른 칸에 놓으면 잇기 · 빈 데 놓으면 거기 이은 칸,
- *    사이클도 된다. 연결에 방향이 있을지는 만들 때 고르고, 빈 데 오른쪽 클릭으로도 바꾼다
+ *    사이클도 된다. 연결에 방향이 있을지는 만들 때 고르고, 빈 데 오른쪽 클릭 "설정…" 창 (GraphSettingsDialog) 에서도 바꾼다.
+ *    관계도를 통째로 지우는 것도 그 창에서 루트 이름을 쳐서만 — 루트 칸 오른쪽 클릭엔 지우기가 없고, 루트에서 Delete 면 그 창이 뜬다
+ *    방향 있는 관계도의 연결은 한 방향 · 양방향 · 안 정함 (방향 없을 때 이은 것) 셋 — 이어진 두 칸을 Ctrl+끌기 하면
+ *    안 정한 건 그쪽으로 정하고, 반대로 가던 건 양방향이 된다. 연결 오른쪽 클릭으로도 고른다.
+ *    판 왼쪽 위 (전체화면이면 띄운 판 맨 위) (자유 그래프) · (루트부터) 로 보는 법을 바꾼다 — 루트부터는 중심 칸에서 떨어진 만큼 세로줄로 늘어놓는다 (GraphMap)
  *
  * 목표 쪼개기:
  * 큰 목표를 위에서 아래로 뻗는 마인드맵으로 쪼개 나간다 — backend → arch, sec… → sec 를 고르고
@@ -100,6 +108,12 @@ public class GoalPane extends HBox {
   /** 띄운 말 칸과 맵 테두리 사이. 위는 귀퉁이 단추를 비켜 더 띄운다 */
   private static final double FLOAT_GAP = 10;
   private static final double FLOAT_TOP = 28;
+  /** 띄운 판의 말 칸 높이 — 판이 작아 목록이 FLOAT_LIST_ROWS 줄까지 줄어든 뒤엔 이것도 줄어든다 */
+  private static final double FLOAT_LOG_HEIGHT = 200;
+  /** 띄운 판의 목표 목록은 이 줄 수만큼까지만 줄어든다 */
+  private static final double FLOAT_LIST_ROWS = 1.5;
+  /** 목표 줄 높이를 아직 못 잴 때 (줄이 없을 때) 쓰는 값 */
+  private static final double FLOAT_ROW_GUESS = 26;
 
 
   /**
@@ -198,6 +212,10 @@ public class GoalPane extends HBox {
   /** 관계도 목표일 때 map 대신 보이는 판 */
   private final GraphMap graph = new GraphMap(this::graphMenu, this::linkMenu, this::save, this::openNote, this::connect,
       this::sproutGraphNode);
+  /** 관계도 판 왼쪽 위 보는 법 단추 — 손으로 잡은 자리대로 · 루트부터 세로줄로 (Goal.layered) */
+  private final ToggleButton freeMode = new ToggleButton("자유 그래프");
+  private final ToggleButton rootMode = new ToggleButton("루트부터");
+  private final HBox modeBar = new HBox(freeMode, rootMode);
   /** 관계도 빈 데 메뉴 — 또 띄우기 전에 닫는다 */
   private ContextMenu shownBoardMenu;
   /** 글은 파트너 이름이 들어가서 refreshPartner 가 채운다 */
@@ -214,6 +232,15 @@ public class GoalPane extends HBox {
   private final ExpandCorner corner = new ExpandCorner(() -> setExpanded(!isExpanded()));
   /** 크게 폈을 때 맵 안 오른쪽에 뜨는 둥근 말 칸 — logScroll 을 side 에서 옮겨 담는다 */
   private final FloatingPanel floating = new FloatingPanel(FLOAT_WIDTH, new Insets(FLOAT_TOP, FLOAT_GAP, FLOAT_GAP, 0));
+  /** 크게 폈을 때 띄운 판 위쪽의 목표 목록 — 머릿줄 목록(picker)이 걷히니 여기서 갈아탄다 */
+  private final ListView<GoalStore.Goal> goalList = new ListView<>();
+  /** 띄운 판 안 — 목표 목록 위, 말 칸 아래. 높이 나누기는 layoutFloatBody */
+  private final VBox floatBody = new VBox(4) {
+    @Override
+    protected void layoutChildren() {
+      layoutFloatBody(this);
+    }
+  };
 
   /** reserveRight 가 잡은 여백 — 크게 폈다 접을 때 되돌린다 */
   private Insets reserved = new Insets(PAD, 20, PAD, 20);
@@ -280,11 +307,17 @@ public class GoalPane extends HBox {
     picker.setFocusTraversable(false);
     picker.setPromptText("새 목표");
     picker.setMaxWidth(220);
-    picker.setCellFactory(lv -> new GoalCell());
-    picker.setButtonCell(new GoalCell());
+    picker.setCellFactory(lv -> new GoalCell(false));
+    picker.setButtonCell(new GoalCell(true));
     picker.valueProperty().addListener((obs, was, is) -> {
-      if (!syncing && is != null && is != current)
-        open(is);
+      if (syncing || is == null || is == current)
+        return;
+      // 갈래 머리 (목표 · 관계도) 는 고르는 줄이 아니다 — 키로 닿았으면 하던 목표로 되돌린다
+      if (isGroup(is)) {
+        Platform.runLater(this::syncPicker);
+        return;
+      }
+      open(is);
     });
 
     Button add = new Button("＋");
@@ -341,7 +374,21 @@ public class GoalPane extends HBox {
     moveBar.setVisible(false);
     StackPane.setAlignment(moveBar, Pos.BOTTOM_CENTER);
     StackPane.setMargin(moveBar, new Insets(0, 10, 10, 10));
-    mapBox = new StackPane(map, graph, emptyHint, moveBar, corner);
+    for (ToggleButton mode : List.of(freeMode, rootMode)) {
+      mode.getStyleClass().add("graph-mode-button");
+      mode.setFocusTraversable(false);
+      mode.setOnAction(e -> setLayered(mode == rootMode));
+      // 띄운 판에 들어가면 판 폭을 반씩 나눠 쓴다
+      mode.setMaxWidth(Double.MAX_VALUE);
+      HBox.setHgrow(mode, Priority.ALWAYS);
+    }
+    modeBar.getStyleClass().add("graph-mode");
+    modeBar.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+    modeBar.setVisible(false);
+    modeBar.managedProperty().bind(modeBar.visibleProperty());
+    StackPane.setAlignment(modeBar, Pos.TOP_LEFT);
+    StackPane.setMargin(modeBar, new Insets(8, 0, 0, 8));
+    mapBox = new StackPane(map, graph, emptyHint, moveBar, modeBar, corner);
 
     VBox.setVgrow(mapBox, Priority.ALWAYS);
 
@@ -353,6 +400,25 @@ public class GoalPane extends HBox {
     VBox.setVgrow(logScroll, Priority.ALWAYS);
     // 말이 붙으면 맨 밑으로
     log.heightProperty().addListener((obs, was, is) -> logScroll.setVvalue(1.0));
+
+    goalList.getStyleClass().addAll("notepad-list", "float-list");
+    goalList.setPlaceholder(new Label("목표가 없어"));
+    // 펴진 채엔 머릿줄 ＋ 가 걷히니 목록 맨 끝 줄 (NEW_ROW) 의 단추로 새로 만든다
+    goalList.setCellFactory(lv -> new GoalCell(false, () -> startNewDialog("")));
+    goalList.setFocusTraversable(false);
+    goalList.getSelectionModel().selectedItemProperty().addListener((obs, was, is) -> {
+      if (syncing || is == null || is == current)
+        return;
+      if (isGroup(is) || is == NEW_ROW) {
+        Platform.runLater(this::syncPicker);
+        return;
+      }
+      open(is);
+      // 펴진 채엔 판 키가 먹게 포커스를 판으로 돌려준다
+      Platform.runLater(() -> view().requestFocus());
+    });
+    VBox.setVgrow(goalList, Priority.ALWAYS);
+    floatBody.getChildren().add(goalList);
 
     input.getStyleClass().add("chat-input");
     refreshPartner();
@@ -436,16 +502,31 @@ public class GoalPane extends HBox {
       node.setManaged(!on);
     }
     if (on) {
-      floating.setContent(logScroll);
+      floatBody.getChildren().remove(logScroll);
+      floatBody.getChildren().add(logScroll);
+      // 보는 법 단추 (자유 그래프 · 루트부터) 는 띄운 판 맨 위로
+      mapBox.getChildren().remove(modeBar);
+      floatBody.getChildren().add(0, modeBar);
+      modeBar.setMaxWidth(Double.MAX_VALUE);
+      floating.setContent(floatBody);
       floating.resetPosition();
       mapBox.getChildren().add(floating);
       corner.toFront();
       setPadding(new Insets(PAD));
     } else {
       mapBox.getChildren().remove(floating);
+      floatBody.getChildren().remove(logScroll);
+      floatBody.getChildren().remove(modeBar);
+      modeBar.setMaxWidth(Region.USE_PREF_SIZE);
+      mapBox.getChildren().add(mapBox.getChildren().indexOf(corner), modeBar);
       side.getChildren().setAll(logScroll);
       setPadding(reserved);
     }
+    syncFloatLog();
+    // 펴진 채엔 끝 칸 바깥에 띄운 판 폭만큼 여백을 둔다 — 끝까지 스크롤하면 판에 가렸던 칸이 드러나게
+    double rim = on ? FLOAT_WIDTH + FLOAT_GAP : 0;
+    map.setRim(rim);
+    graph.setRim(rim);
     logScroll.setVvalue(1.0);
     corner.setExpanded(on);
     onExpand.accept(on);
@@ -453,6 +534,93 @@ public class GoalPane extends HBox {
       view().requestFocus();
     else
       Platform.runLater(() -> Ime.focus(input));
+  }
+
+  /**
+   * 띄운 판의 말 칸은 파트너랑 같이 쓰는 목표이거나 오간 말이 남아 있을 때만 — 아니면 목표 목록이 판을 다 쓴다.
+   * 접혀 있으면 오른쪽 세로줄의 말 칸은 늘 보인다
+   */
+  private void syncFloatLog() {
+    boolean show = !expanded || (current != null && (current.usesLlm() || !current.log.isEmpty()));
+    logScroll.setVisible(show);
+    logScroll.setManaged(show);
+  }
+
+  /**
+   * 띄운 판 안 높이 나누기. 보는 법 단추 · 새로 만들기 줄은 제 키대로 서고, 남는 자리를
+   * 말 칸 (FLOAT_LOG_HEIGHT 고정) 과 목표 목록 (나머지 전부) 이 나눈다. 판이 작아지면 목록이 먼저
+   * FLOAT_LIST_ROWS 줄까지 줄고, 그래도 모자라면 말 칸도 줄어든다.
+   */
+  private void layoutFloatBody(VBox body) {
+    Insets in = body.getInsets();
+    double w = Math.max(0, body.getWidth() - in.getLeft() - in.getRight());
+    double h = Math.max(0, body.getHeight() - in.getTop() - in.getBottom());
+    List<javafx.scene.Node> kids = body.getChildren().filtered(javafx.scene.Node::isManaged);
+    double gap = body.getSpacing();
+    double others = gap * Math.max(0, kids.size() - 1);
+    for (javafx.scene.Node kid : kids) {
+      if (kid != goalList && kid != logScroll)
+        others += Math.ceil(kid.prefHeight(w));
+    }
+    double room = Math.max(0, h - others);
+    double listH = room;
+    double logH = 0;
+    if (logScroll.isManaged()) {
+      double full = floatListFull();
+      double min = Math.min(floatListMin(), full);
+      logH = Math.max(0, Math.min(FLOAT_LOG_HEIGHT, room - min));
+      listH = room - logH;
+      // 목록이 다 보이고도 남으면 목록은 제 키에 멈추고 남는 건 말 칸이 갖는다
+      if (listH > full) {
+        listH = full;
+        logH = room - full;
+      }
+    }
+
+    double y = in.getTop();
+    for (javafx.scene.Node kid : kids) {
+      double kh = kid == goalList ? listH : kid == logScroll ? logH : Math.ceil(kid.prefHeight(w));
+      kid.resizeRelocate(in.getLeft(), y, w, kh);
+      y += kh + gap;
+    }
+  }
+
+  /** 띄운 판의 목표 목록이 줄어들 수 있는 끝 — 목표 줄 FLOAT_LIST_ROWS 개 키 */
+  private double floatListMin() {
+    return listInsets() + rowHeight("goal-item") * FLOAT_LIST_ROWS;
+  }
+
+  /** 띄운 판의 목표 목록이 줄을 다 보이는 키 — 갈래 머리 · 목표 · 새로 만들기 줄을 다 더한 만큼 */
+  private double floatListFull() {
+    double sum = listInsets();
+    for (GoalStore.Goal goal : goalList.getItems())
+      sum += rowHeight(isGroup(goal) ? "goal-group" : goal == NEW_ROW ? "goal-new-row" : "goal-item");
+    return sum;
+  }
+
+  private double listInsets() {
+    return goalList.snappedTopInset() + goalList.snappedBottomInset();
+  }
+
+  /** 잰 줄 높이 — 줄 종류 (칸 스타일 이름) 마다. 그려진 적 없으면 목표 줄 높이, 그것도 없으면 짐작 값 */
+  private final java.util.Map<String, Double> rowHeights = new java.util.HashMap<>();
+
+  private double rowHeight(String kind) {
+    for (javafx.scene.Node cell : goalList.lookupAll("." + kind)) {
+      double ch = cell.getLayoutBounds().getHeight();
+      if (ch > 0) {
+        Double was = rowHeights.put(kind, ch);
+        // 짐작으로 나눴던 거면 잰 값으로 다시 나눈다
+        if (was == null || Math.abs(was - ch) > 0.5)
+          Platform.runLater(floatBody::requestLayout);
+        break;
+      }
+    }
+    Double known = rowHeights.get(kind);
+    if (known != null)
+      return known;
+    Double item = rowHeights.get("goal-item");
+    return item != null ? item : FLOAT_ROW_GUESS;
   }
 
   /** 지금 목표를 그리는 판 — 관계도면 graph, 아니면 map */
@@ -688,14 +856,54 @@ public class GoalPane extends HBox {
       book.guideOff.add(choice.kind());
       save();
     }
-    Platform.runLater(() -> Ime.focus(input));
+    // 펴진 채엔 입력칸이 걷혀 있으니 판으로
+    if (expanded)
+      Platform.runLater(() -> view().requestFocus());
+    else
+      Platform.runLater(() -> Ime.focus(input));
   }
 
   private void syncPicker() {
     syncing = true;
-    picker.getItems().setAll(book.goals);
+    List<GoalStore.Goal> grouped = grouped();
+    picker.getItems().setAll(grouped);
     picker.setValue(current);
+    // 띄운 목록은 맨 끝에 새로 만들기 줄을 단다
+    List<GoalStore.Goal> listed = new ArrayList<>(grouped);
+    listed.add(NEW_ROW);
+    goalList.getItems().setAll(listed);
+    if (current == null) {
+      goalList.getSelectionModel().clearSelection();
+    } else {
+      goalList.getSelectionModel().select(current);
+      goalList.scrollTo(current);
+    }
     syncing = false;
+    syncFloatLog();
+    floatBody.requestLayout();
+  }
+
+  /** 목표 목록 줄 — 목표 쪼개기 갈래, 관계도 갈래 차례로. 갈래마다 머리 줄 (TREES · GRAPHS) 을 앞에 단다 */
+  private List<GoalStore.Goal> grouped() {
+    List<GoalStore.Goal> trees = new ArrayList<>();
+    List<GoalStore.Goal> graphs = new ArrayList<>();
+    for (GoalStore.Goal goal : book.goals)
+      (goal.graph() ? graphs : trees).add(goal);
+    List<GoalStore.Goal> out = new ArrayList<>();
+    if (!trees.isEmpty()) {
+      out.add(TREES);
+      out.addAll(trees);
+    }
+    if (!graphs.isEmpty()) {
+      out.add(GRAPHS);
+      out.addAll(graphs);
+    }
+    return out;
+  }
+
+  /** 목록의 갈래 머리 줄 — 고를 수 있는 목표가 아니다 */
+  private static boolean isGroup(GoalStore.Goal goal) {
+    return goal == TREES || goal == GRAPHS;
   }
 
   // ── 그리기 ──
@@ -708,6 +916,28 @@ public class GoalPane extends HBox {
     graph.setVisible(isGraph);
     map.show(isGraph ? null : current, selectId);
     graph.show(isGraph ? current : null, selectId);
+    syncMode();
+  }
+
+  /** 보는 법 단추를 지금 관계도에 맞춘다. 관계도가 아니면 숨긴다 */
+  private void syncMode() {
+    boolean isGraph = isGraph();
+    modeBar.setVisible(isGraph);
+    freeMode.setSelected(isGraph && !current.layered);
+    rootMode.setSelected(isGraph && current.layered);
+  }
+
+  /** 관계도를 루트부터 늘어놓아 볼지 (아니면 자유 그래프). 고른 칸 · 연결은 그대로 */
+  private void setLayered(boolean on) {
+    if (!isGraph())
+      return;
+    if (current.layered != on) {
+      current.layered = on;
+      save();
+      graph.refresh();
+    }
+    syncMode();
+    graph.requestFocus();
   }
 
   /** 이름 · 메모 · 표시가 바뀌었을 때 지금 판을 다시 그린다 */
@@ -856,17 +1086,17 @@ public class GoalPane extends HBox {
   private void remove(GoalStore.Node node) {
     if (node == null || current == null)
       return;
+    if (node == current.root && isGraph()) {
+      // 관계도는 설정 창에서 루트 이름을 쳐야만 지운다 — 루트에서 Delete 면 그 확인 칸을 펴서 띄운다
+      openGraphSettings(true);
+      return;
+    }
     if (node == current.root) {
       int choice = Notice.ask(getScene().getWindow(),
-          isGraph() ? "「" + node.title + "」 관계도를 통째로 지울게.\n칸이랑 연결이 다 사라져."
-              : "「" + node.title + "」 목표를 통째로 지울게.\n쪼갠 칸이랑 마도카랑 나눈 말도 같이 사라져.", "지우기", "취소");
+          "「" + node.title + "」 목표를 통째로 지울게.\n쪼갠 칸이랑 마도카랑 나눈 말도 같이 사라져.", "지우기", "취소");
       if (choice != 0)
         return;
-      book.goals.remove(current);
-      if (book.goals.isEmpty())
-        startNew();
-      else
-        open(book.goals.get(0));
+      removeCurrentGoal();
       return;
     }
     if (isGraph()) {
@@ -887,6 +1117,33 @@ public class GoalPane extends HBox {
     parent.children.remove(node);
     save();
     renderTree(index > 0 ? parent.children.get(index - 1).id : parent.id);
+  }
+
+  /** 지금 목표를 통째로 지우고 남은 첫 목표로 (없으면 새로 세울 자리로) */
+  private void removeCurrentGoal() {
+    book.goals.remove(current);
+    if (book.goals.isEmpty())
+      startNew();
+    else
+      open(book.goals.get(0));
+  }
+
+  /**
+   * 관계도 설정 창 (빈 데 오른쪽 클릭 "설정…") — 무향 · 유향을 바로 바꾸고, 루트 이름을 똑같이 쳐서 확인하면 관계도를 지운다.
+   * askDelete 면 지우기 확인 칸을 펴서 띄운다 (루트에서 Delete)
+   */
+  private void openGraphSettings(boolean askDelete) {
+    if (!isGraph())
+      return;
+    GoalStore.Goal goal = current;
+    boolean delete = GraphSettingsDialog.show(getScene().getWindow(), goal.root.title, goal.directed, this::setDirected,
+        askDelete);
+    if (delete && goal == current) {
+      removeCurrentGoal();
+      showStatus("「" + goal.root.title + "」 관계도를 지웠어", false);
+    }
+    if (expanded)
+      Platform.runLater(() -> view().requestFocus());
   }
 
   /** 파트너 없이 손으로 자식 칸 하나를 붙인다. 붙인 칸을 고른 채로 */
@@ -973,17 +1230,46 @@ public class GoalPane extends HBox {
     renderTree(node.id);
   }
 
-  /** Ctrl+끌기 — from 에서 to 로 잇는다. 방향 없는 관계도면 어느 쪽이든 하나만 */
+  /**
+   * Ctrl+끌기 — from 에서 to 로 잇는다. 이미 이어져 있으면 방향 있는 관계도에선 방향을 고친다 —
+   * 안 정한 연결은 from → to 로, to → from 이던 건 양방향으로
+   */
   private void connect(GoalStore.Node from, GoalStore.Node to) {
     if (!isGraph())
       return;
-    if (current.connect(from, to) == null) {
-      showStatus("「" + from.title + "」 · 「" + to.title + "」 벌써 이어져 있어", false);
+    String pair = "「" + from.title + "」 · 「" + to.title + "」";
+    GoalStore.Link link = current.link(from, to);
+    if (link == null) {
+      current.connect(from, to);
+      save();
+      renderTree(to.id);
+      showStatus("「" + from.title + "」 " + (current.directed ? "→" : "—") + " 「" + to.title + "」 이었어!", false);
       return;
     }
+    if (!current.directed || link.both() || (link.one() && link.from.equals(from.id))) {
+      showStatus(pair + " 벌써 이어져 있어", false);
+      return;
+    }
+    if (link.one()) {
+      setDir(link, GoalStore.Link.BOTH, null);
+      showStatus(pair + " 양방향이 됐어!", false);
+    } else {
+      setDir(link, GoalStore.Link.ONE, from);
+      showStatus("「" + from.title + "」 → 「" + to.title + "」 방향을 정했어!", false);
+    }
+  }
+
+  /** 연결 방향을 바꾼다. ONE 이면 start 에서 나가게 (null 이면 지금 그대로) */
+  private void setDir(GoalStore.Link link, String dir, GoalStore.Node start) {
+    if (!isGraph())
+      return;
+    if (start != null && !link.from.equals(start.id)) {
+      link.to = link.from;
+      link.from = start.id;
+    }
+    link.dir = dir;
     save();
-    renderTree(to.id);
-    showStatus("「" + from.title + "」 " + (current.directed ? "→" : "—") + " 「" + to.title + "」 이었어!", false);
+    graph.refresh();
   }
 
   /** 관계도 칸을 지운다 — 그 칸에 붙은 연결도 같이. 이어진 칸들은 그대로 남는다 */
@@ -1006,15 +1292,13 @@ public class GoalPane extends HBox {
     graph.refresh();
   }
 
-  /** 방향 있는 연결을 뒤집는다. 반대로 가는 연결이 이미 있으면 둘이 겹치니 그냥 둔다 */
+  /** 한 방향 연결을 뒤집는다. 양방향 · 안 정한 연결은 뒤집을 게 없다 */
   private void flipLink(GoalStore.Link link) {
     if (!isGraph())
       return;
-    for (GoalStore.Link other : current.links) {
-      if (other != link && other.from.equals(link.to) && other.to.equals(link.from)) {
-        showStatus("반대로 가는 연결이 벌써 있어", false);
-        return;
-      }
+    if (!link.one()) {
+      showStatus(link.both() ? "양방향 연결이야" : "아직 방향을 안 정했어 — Ctrl+끌기로 정해 줘", false);
+      return;
     }
     String from = link.from;
     link.from = link.to;
@@ -1023,24 +1307,17 @@ public class GoalPane extends HBox {
     graph.refresh();
   }
 
-  /** 연결에 방향을 달거나 뗀다. 떼면 같은 두 칸을 잇는 연결이 둘이던 건 (서로 반대로) 하나로 합친다 */
-  private void toggleDirected() {
-    if (!isGraph())
+  /**
+   * 관계도를 방향 있게 · 없게. 연결마다 정해 둔 방향은 지우지 않고 남겨서, 다시 방향을 달면 되살아난다 —
+   * 방향 없을 때 이은 연결은 안 정한 채로 (화살촉 없이) 남는다
+   */
+  private void setDirected(boolean on) {
+    if (!isGraph() || current.directed == on)
       return;
-    current.directed = !current.directed;
-    if (!current.directed) {
-      List<GoalStore.Link> kept = new ArrayList<>();
-      for (GoalStore.Link link : current.links) {
-        boolean twin = kept.stream().anyMatch(k -> k.from.equals(link.to) && k.to.equals(link.from));
-        if (!twin)
-          kept.add(link);
-      }
-      current.links.clear();
-      current.links.addAll(kept);
-    }
+    current.directed = on;
     save();
     graph.refresh();
-    showStatus(current.directed ? "이제 연결에 방향이 있어 (화살표)" : "이제 연결에 방향이 없어", false);
+    showStatus(on ? "이제 연결에 방향이 있어 (화살표) — 안 정한 연결은 Ctrl+끌기로 정해 줘" : "이제 연결에 방향이 없어", false);
   }
 
   /** 칸 이름을 손으로 고친다. 맨 위 칸이면 목표 이름도 바뀌니 목록도 맞춘다 */
@@ -1776,12 +2053,72 @@ public class GoalPane extends HBox {
 
   // ── 칸 모양 ──
 
-  /** 목표 목록의 한 줄 — 맨 위 칸 이름 */
+  /** 목표 목록의 갈래 머리 줄 (grouped) — 목표가 아니라 자리만 차지한다 */
+  private static final GoalStore.Goal TREES = new GoalStore.Goal();
+  private static final GoalStore.Goal GRAPHS = new GoalStore.Goal();
+  /** 띄운 목록 맨 끝의 새로 만들기 줄 — 목표가 아니라 단추 하나를 담는다 */
+  private static final GoalStore.Goal NEW_ROW = new GoalStore.Goal();
+
+  /**
+   * 목표 목록의 한 줄 — 맨 위 칸 이름. 갈래 머리 (목표 · 관계도) 는 못 고르는 흐린 줄로.
+   * 빈 줄은 비워 둔다 — 목록 밑 빈 자리마다 "새 목표" 가 되풀이되지 않게. 콤보 단추 칸 (button) 만
+   * 아무것도 안 골랐을 때 "새 목표" 를 띄운다
+   */
   private static final class GoalCell extends ListCell<GoalStore.Goal> {
+    private final boolean button;
+    /** 새로 만들기 줄 (NEW_ROW) 의 단추가 부를 일. 콤보에선 null */
+    private final Runnable onNew;
+    private Button newButton;
+
+    GoalCell(boolean button) {
+      this(button, null);
+    }
+
+    GoalCell(boolean button, Runnable onNew) {
+      this.button = button;
+      this.onNew = onNew;
+    }
+
     @Override
     protected void updateItem(GoalStore.Goal goal, boolean empty) {
       super.updateItem(goal, empty);
-      setText(empty || goal == null ? "새 목표" : (goal.graph() ? "🕸 " : "") + goal.root.title);
+      getStyleClass().removeAll("goal-group", "goal-item", "goal-new-row");
+      boolean group = !empty && isGroup(goal);
+      setDisable(group);
+      setGraphic(null);
+      setAlignment(Pos.CENTER_LEFT);
+      if (empty || goal == null) {
+        setText(button ? "새 목표" : null);
+        return;
+      }
+      if (goal == NEW_ROW) {
+        if (newButton == null) {
+          newButton = new Button("＋ 새로 만들기");
+          newButton.getStyleClass().add("float-new");
+          newButton.setFocusTraversable(false);
+          newButton.setOnAction(e -> {
+            if (onNew != null)
+              onNew.run();
+          });
+        }
+        getStyleClass().add("goal-new-row");
+        setAlignment(Pos.CENTER_RIGHT);
+        setText(null);
+        setGraphic(newButton);
+        return;
+      }
+      if (group) {
+        // 글자만 둥글게 감싼다 — 칸 바탕에 칠하면 줄 폭 전체가 칠해져서 딱지 하나를 따로 얹는다
+        getStyleClass().add("goal-group");
+        Label pill = new Label(goal == TREES ? "목표" : "관계도");
+        pill.getStyleClass().add("goal-group-pill");
+        setText(null);
+        setGraphic(pill);
+        return;
+      }
+      if (!button)
+        getStyleClass().add("goal-item");
+      setText(goal.root.title);
     }
   }
 
@@ -1851,10 +2188,11 @@ public class GoalPane extends HBox {
         item("이름 고치기", KeyCode.F2, () -> rename(node)),
         new SeparatorMenuItem(),
         note,
-        item(node.done ? "안 끝낸 걸로" : "끝냄", KeyCode.SPACE, () -> toggleDone(node)),
-        new SeparatorMenuItem(),
-        item(root ? "관계도 지우기" : "지우기", KeyCode.DELETE, () -> remove(node)),
-        new SeparatorMenuItem(),
+        item(node.done ? "안 끝낸 걸로" : "끝냄", KeyCode.SPACE, () -> toggleDone(node)));
+    // 루트 칸은 여기서 못 지운다 — 관계도를 통째로 지우는 건 빈 데 오른쪽 클릭 "설정…" 에서 루트 이름을 쳐서만
+    if (!root)
+      menu.getItems().addAll(new SeparatorMenuItem(), item("지우기", KeyCode.DELETE, () -> remove(node)));
+    menu.getItems().addAll(new SeparatorMenuItem(),
         item(expanded ? "전체화면 끄기" : "전체화면", KeyCode.F11, () -> setExpanded(!expanded)));
     return menu;
   }
@@ -1862,10 +2200,22 @@ public class GoalPane extends HBox {
   /** 관계도 연결 선의 오른쪽 클릭 메뉴 */
   private ContextMenu linkMenu(GoalStore.Link link) {
     ContextMenu menu = new ContextMenu();
-    if (current != null && current.directed) {
-      MenuItem flip = new MenuItem("방향 뒤집기");
-      flip.setOnAction(e -> flipLink(link));
-      menu.getItems().add(flip);
+    GoalStore.Node from = current == null ? null : current.find(link.from);
+    GoalStore.Node to = current == null ? null : current.find(link.to);
+    if (current != null && current.directed && from != null && to != null) {
+      // 방향 셋 중 하나 — 안 정한 연결이면 아무것도 안 골라져 있다
+      ToggleGroup group = new ToggleGroup();
+      RadioMenuItem forward = new RadioMenuItem("「" + from.title + "」 → 「" + to.title + "」");
+      forward.setSelected(link.one());
+      forward.setOnAction(e -> setDir(link, GoalStore.Link.ONE, from));
+      RadioMenuItem backward = new RadioMenuItem("「" + to.title + "」 → 「" + from.title + "」");
+      backward.setOnAction(e -> setDir(link, GoalStore.Link.ONE, to));
+      RadioMenuItem both = new RadioMenuItem("양방향");
+      both.setSelected(link.both());
+      both.setOnAction(e -> setDir(link, GoalStore.Link.BOTH, null));
+      for (RadioMenuItem radio : List.of(forward, backward, both))
+        radio.setToggleGroup(group);
+      menu.getItems().addAll(forward, backward, both, new SeparatorMenuItem());
     }
     MenuItem cut = new MenuItem("연결 끊기");
     cut.setOnAction(e -> removeLink(link));
@@ -1877,10 +2227,14 @@ public class GoalPane extends HBox {
   private ContextMenu graphBoardMenu() {
     MenuItem add = new MenuItem("따로 선 칸 추가");
     add.setOnAction(e -> addGraphNode(null));
-    MenuItem directed = new MenuItem(current != null && current.directed ? "연결 방향 없애기" : "연결에 방향 달기");
-    directed.setOnAction(e -> toggleDirected());
+    // 설정 — 관계도 전체에 걸리는 것 (무향 · 유향, 관계도 지우기) 은 팝업 창으로 (GraphSettingsDialog)
+    MenuItem settings = new MenuItem("설정…");
+    settings.setOnAction(e -> openGraphSettings(false));
+    boolean layered = current != null && current.layered;
+    MenuItem mode = new MenuItem(layered ? "자유 그래프로 보기" : "루트부터 보기");
+    mode.setOnAction(e -> setLayered(!layered));
     MenuItem full = item(expanded ? "전체화면 끄기" : "전체화면", KeyCode.F11, () -> setExpanded(!expanded));
-    return new ContextMenu(add, directed, new SeparatorMenuItem(), full);
+    return new ContextMenu(add, mode, settings, new SeparatorMenuItem(), full);
   }
 
   /** 메뉴 한 줄 — 오른쪽에 그 일의 맵 키를 적는다 */

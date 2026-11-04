@@ -99,6 +99,16 @@ public class GeminiClient implements LlmClient {
   /** 그림에 글자가 없을 때 모델이 돌려줄 약속된 말 (빈 답은 에러로 읽히니까 신호를 따로 둔다) */
   private static final String OCR_NOTHING = "NO_TEXT_FOUND";
 
+  /** 수다에 보낸 사진을 읽을 때 쓰는 말. 이 답이 사진 대신 대화에 실리니 짧을수록 두고두고 덜 든다 */
+  private static final String DESCRIBE_HINT = """
+      이 그림을 못 보는 사람에게 말로 전하듯 한국어로 설명해.
+      - 무엇이 보이는지와 눈에 띄는 점을 두 문장 안으로.
+      - 글자가 있으면 중요한 것만 따옴표로 옮겨 적어.
+      - 인사말·마크다운 없이 설명만.""";
+
+  /** 설명 길이 상한. 말이 끊겨도 앞부분은 쓸 수 있다 */
+  private static final int DESCRIBE_MAX_TOKENS = 256;
+
   /** .env 에서 키를 긁어올 때 쓰는 이름 패턴 (WIZ_1, WIZ_2 …) */
   private static final Pattern WIZ_KEY = Pattern.compile("WIZ_(\\d{1,5})");
 
@@ -279,6 +289,54 @@ public class GeminiClient implements LlmClient {
     config.put("temperature", 0);
     if (lowThinking)
       config.putObject("thinkingConfig").put("thinkingLevel", "low");
+    return mapper.writeValueAsString(root);
+  }
+
+  /**
+   * 사진 한 장을 설명 글로 바꾼다. 성격문도 지난 대화도 없이 그림과 짧은 지시만 보내고,
+   * MEDIA_RESOLUTION_LOW 로 그림 값을 줄인다 — gemini-3.1-flash-lite 에서 1280x960 한 장이
+   * 기본값 1064 토큰에서 266 토큰으로 내려간다. 생각도 최소로 둔다.
+   * 모르는 모델이면 400 이 오니 둘 다 빼고 한 번 더 (ocr 과 같은 결).
+   */
+  @Override
+  public String describeImage(byte[] jpeg) throws IOException, InterruptedException {
+    if (!isReady())
+      throw new IllegalStateException(unavailableReason());
+
+    Sent sent = post(buildDescribeBody(jpeg, true), Mode.FAST);
+    if (sent.response() != null && sent.response().statusCode() == 400
+        && (sent.response().body().contains("thinking") || sent.response().body().contains("media")))
+      sent = post(buildDescribeBody(jpeg, false), Mode.FAST);
+
+    if (sent.response() == null || sent.response().statusCode() != 200)
+      throw failed(sent, Mode.FAST);
+
+    try {
+      return extractText(sent.response().body());
+    } catch (IOException noText) {
+      // 응답은 왔는데 글이 없다 (필터 등). 같은 그림을 다시 보내봐야 또 막힌다
+      System.err.println("[chat] 사진 설명 없음: " + noText.getMessage());
+      return "";
+    }
+  }
+
+  private String buildDescribeBody(byte[] jpeg, boolean frugal) throws IOException {
+    ObjectNode root = mapper.createObjectNode();
+
+    ObjectNode turn = root.putArray("contents").addObject();
+    turn.put("role", "user");
+    ArrayNode parts = turn.putArray("parts");
+    parts.addObject().put("text", DESCRIBE_HINT);
+    ObjectNode inline = parts.addObject().putObject("inlineData");
+    inline.put("mimeType", "image/jpeg");
+    inline.put("data", Base64.getEncoder().encodeToString(jpeg));
+
+    ObjectNode config = root.putObject("generationConfig");
+    config.put("maxOutputTokens", DESCRIBE_MAX_TOKENS);
+    if (frugal) {
+      config.put("mediaResolution", "MEDIA_RESOLUTION_LOW");
+      config.putObject("thinkingConfig").put("thinkingLevel", "minimal");
+    }
     return mapper.writeValueAsString(root);
   }
 

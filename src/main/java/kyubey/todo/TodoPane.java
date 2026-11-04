@@ -59,6 +59,11 @@ public final class TodoPane extends ScrollPane {
   /** 밀려서 나중 날에 끝낸 할 일을 그 전 날 기록에서 볼 때 — 취소선 */
   private static final String STRUCK = "todo-text-struck";
   private static final String PROMPT = "할 일 입력 (Enter)";
+  /** 지운 카테고리에 남은 할 일 ('기타') 의 색 */
+  private static final String ORPHAN = "#9b9b9b";
+
+  /** 새로 그릴 때마다 부를 것들 (addOnRender) */
+  private final List<Runnable> renderListeners = new ArrayList<>();
 
   private final TodoStore store = new TodoStore();
 
@@ -275,9 +280,11 @@ public final class TodoPane extends ScrollPane {
       body.getChildren().add(group(category, palette.get(i % palette.size()), byCategory.get(category.id)));
     }
     if (!orphans.isEmpty())
-      body.getChildren().add(group(null, "#9b9b9b", orphans));
+      body.getChildren().add(group(null, ORPHAN, orphans));
     // if (day != null)
     // body.getChildren().add(categoryAdder());
+    for (Runnable listener : renderListeners)
+      listener.run();
   }
 
   /** 카테고리 하나 — 이름표와 그 밑의 할 일들. category 가 null 이면 '기타' */
@@ -334,25 +341,10 @@ public final class TodoPane extends ScrollPane {
       if (e.getButton() != MouseButton.PRIMARY)
         return;
       e.consume();
-      // 끝낸 날은 이 날 — 밀려 다닌 사본들도 같이 고친다 (그 전 날은 취소선, 그 뒤 날은 없던 것)
-      boolean done = !clover.done;
-      try {
-        store.markDone(day, todo, done ? LocalDate.parse(day.date) : null);
-      } catch (IOException ex) {
-        showWarning("다른 날 기록을 못 고쳤어: " + ex.getMessage());
-      }
-      clover.set(todo.done);
-      markText(text, todo);
-      Milestone milestone = todo.done ? milestone(todo) : null;
-      saveDay();
-      if (milestone != null)
-        onDone.accept(todo, milestone);
-      // 목표 칸도 맞추면 같은 칸에서 온 다른 날 할 일이 파일에서 바뀔 수 있어서 이 날을 다시 읽는다
-      if (todo.goalId != null && todo.goalNode != null) {
-        onGoalDone.accept(todo.goalId, todo.goalNode, todo.done);
-        show(LocalDate.parse(day.date));
-        onChange.run();
-      }
+      flip(todo, () -> {
+        clover.set(todo.done);
+        markText(text, todo);
+      });
     });
     // 오른쪽 클릭: 이름 바꾸기 · 카테고리 옮기기 · 내일로 미루기 · 지우기 (목표 맵에서 온 거면 맨 위에 목표로 이동하기).
     // 미루는 건 아직 안 끝낸 것만, 지난 날 기록에선 못 한다
@@ -383,6 +375,56 @@ public final class TodoPane extends ScrollPane {
       e.consume();
     });
     return row;
+  }
+
+  /**
+   * 체크칸을 누른 것 — 끝냄 · 안 끝냄을 뒤집는다. 끝낸 날은 이 날 — 밀려 다닌 사본들도 같이 고친다
+   * (그 전 날은 취소선, 그 뒤 날은 없던 것). drawn 은 저장 전에 화면을 맞추는 일
+   */
+  private void flip(TodoStore.Todo todo, Runnable drawn) {
+    boolean done = !todo.done;
+    try {
+      store.markDone(day, todo, done ? LocalDate.parse(day.date) : null);
+    } catch (IOException ex) {
+      showWarning("다른 날 기록을 못 고쳤어: " + ex.getMessage());
+    }
+    drawn.run();
+    Milestone milestone = todo.done ? milestone(todo) : null;
+    saveDay();
+    if (milestone != null)
+      onDone.accept(todo, milestone);
+    // 목표 칸도 맞추면 같은 칸에서 온 다른 날 할 일이 파일에서 바뀔 수 있어서 이 날을 다시 읽는다
+    if (todo.goalId != null && todo.goalNode != null) {
+      onGoalDone.accept(todo.goalId, todo.goalNode, todo.done);
+      show(LocalDate.parse(day.date));
+      onChange.run();
+    }
+  }
+
+  /**
+   * 딴 데 (오로라, AuroraTodos) 에서 체크칸을 누른 것 — 여기서 누른 것과 똑같이 끝냄 · 안 끝냄을 뒤집고 (칭찬 · 목표 맵까지),
+   * 이 판도 새로 그린다. 지금 보이는 날의 할 일이 아니면 아무 일도 없다
+   */
+  public void toggle(TodoStore.Todo todo) {
+    if (day == null || !day.todos.contains(todo))
+      return;
+    flip(todo, () -> {
+    });
+    render(null);
+  }
+
+  /** 할 일의 카테고리 색 — 이 판에서 칠하는 색 그대로 (지운 카테고리에 남은 '기타' 는 회색) */
+  public String colorOf(TodoStore.Todo todo) {
+    for (int i = 0; i < categories.size(); i++) {
+      if (categories.get(i).id.equals(todo.categoryId))
+        return palette.get(i % palette.size());
+    }
+    return ORPHAN;
+  }
+
+  /** 새로 그리거나 저장할 때마다 부른다 — 할 일을 따로 띄우는 데 (오로라) 가 따라 맞추게 */
+  public void addOnRender(Runnable listener) {
+    renderListeners.add(listener);
   }
 
   /** 할 일 글자 자리에 칸을 띄워 고친다. Enter 로 바꾸고 Esc / 딴 데 누르면 그대로 */
@@ -673,6 +715,8 @@ public final class TodoPane extends ScrollPane {
         todo.category = titles.getOrDefault(todo.categoryId, todo.category);
       store.saveDay(day);
       onChange.run();
+      for (Runnable listener : renderListeners)
+        listener.run();
     } catch (IOException e) {
       showWarning("할 일을 못 적었어: " + e.getMessage());
     }
@@ -712,6 +756,13 @@ public final class TodoPane extends ScrollPane {
       Label number = new Label(count);
       number.getStyleClass().add("todo-week-count");
       getChildren().add(number);
+      setCursor(Cursor.DEFAULT);
+    }
+
+    /** 할 일 창 날짜 칸 — 체크 대신 다른 흰 표시 (세모 · X 같은 SVG 경로) 를 얹는다 */
+    Clover(Color color, String mark) {
+      this(color, true);
+      check.setContent(mark);
       setCursor(Cursor.DEFAULT);
     }
 

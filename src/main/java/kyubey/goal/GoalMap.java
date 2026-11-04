@@ -54,6 +54,8 @@ final class GoalMap extends ScrollPane {
   private static final double V_GAP = 26;
   /** 판 가장자리 여백 */
   private static final double PAD = 10;
+  /** 끝 칸 바깥에 더 두는 여백 — 전체화면에서 끝까지 스크롤해도 칸이 가장자리에 붙지 않게 (setRim) */
+  private double rim;
   /** 딱지 하나가 이보다 넓어지면 줄을 바꾼다 */
   private static final double CHIP_MAX = 96;
 
@@ -100,6 +102,14 @@ final class GoalMap extends ScrollPane {
 
     // ScrollPane 이 화살표를 스크롤로 먹기 전에 가로챈다
     addEventFilter(KeyEvent.KEY_PRESSED, this::arrowKey);
+  }
+
+  /** 끝 칸 바깥 여백을 바꾼다 — 상하좌우 모두 */
+  void setRim(double rim) {
+    if (this.rim == rim)
+      return;
+    this.rim = rim;
+    board.requestLayout();
   }
 
   /** 목표를 새로 그린다. selectId 칸을 고른 채로 (없으면 맨 위 칸). goal 이 null 이면 빈 판 */
@@ -426,13 +436,13 @@ final class GoalMap extends ScrollPane {
 
     @Override
     protected double computePrefWidth(double height) {
-      return treeWidth() + PAD * 2;
+      return treeWidth() + (PAD + rim) * 2;
     }
 
     @Override
     protected double computePrefHeight(double width) {
       treeWidth();
-      return treeHeight() + PAD * 2;
+      return treeHeight() + (PAD + rim) * 2;
     }
 
     @Override
@@ -441,8 +451,8 @@ final class GoalMap extends ScrollPane {
         return;
       double width = treeWidth();
       // 판이 나무보다 넓으면 가운데로
-      double left = Math.max(PAD, (getWidth() - width) / 2);
-      place(goal.root, left, 0, PAD);
+      double left = Math.max(PAD + rim, (getWidth() - width) / 2);
+      place(goal.root, left, 0, PAD + rim);
       for (Edge edge : edges) {
         Label from = chips.get(edge.parent);
         Label to = chips.get(edge.child);

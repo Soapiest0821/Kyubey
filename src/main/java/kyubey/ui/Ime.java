@@ -53,6 +53,8 @@ public final class Ime {
       root.requestFocus();
 
     field.requestFocus();
+    // 목표 맵이 떼어 둔 IME 가 남아 있으면 (shortcutsOnly) 한/영 키가 안 먹는다 — 글자 칸으로 올 땐 늘 되돌린다
+    restore();
   }
 
   /**
@@ -78,25 +80,63 @@ public final class Ime {
     // stage.hide() 뒤 show() 는 OS 창이 새것이라 (맨 위 주석) 창이 앞에 올 때마다 다시 맞춘다. 대화창에서 돌아올 때도
     areas[0].sceneProperty().flatMap(Scene::windowProperty).flatMap(javafx.stage.Window::focusedProperty)
         .addListener(update);
+    // 전체화면을 켜고 끌 때도 OS 창이 바뀐다 — 윈도우판 JavaFX 는 전체화면을 따로 만든 OS 창에 옮겨 담는다.
+    // 포커스 주인도 창 포커스도 그대로라 위 두 신호가 안 오니, 바뀐 창이 앞에 선 뒤에 다시 맞춘다
+    areas[0].sceneProperty().flatMap(Scene::windowProperty)
+        .flatMap(w -> w instanceof javafx.stage.Stage s ? s.fullScreenProperty() : null)
+        .addListener((obs, was, is) -> javafx.application.Platform.runLater(() -> apply(areas)));
   }
 
-  /** 지금 포커스가 areas 안이면 IME 를 떼고, 아니면 붙인다. 창이 앞에 있을 때만 — 대화창 IME 를 건드리지 않게 */
+  /**
+   * IME 를 뗀 OS 창들. 떼는 건 그때 앞에 있던 창 하나에 걸리는데, 붙일 때 앞에 있는 창이 그 창이란 보장이 없다 —
+   * 목표 맵에서 떼 놓고 전체화면을 켜고 끄거나 숨겼다 부르면 OS 창이 바뀌어서, 붙이는 건 새 창에 가고 뗀 창은
+   * 뗀 채로 남는다. 그 창으로 돌아와 입력창에 치면 IME 가 없으니 한/영 키도 안 먹고 영문만 나왔다.
+   * 그래서 뗀 창을 다 적어 두고, 붙일 땐 지금 창과 함께 적어 둔 창을 모두 되돌린다
+   */
+  private static final java.util.Set<Pointer> detached = new java.util.HashSet<>();
+
+  /** 지금 포커스가 areas 안이면 IME 를 떼고, 아니면 붙인다. 떼는 건 창이 앞에 있을 때만 — 대화창 IME 를 건드리지 않게 */
   private static void apply(Node[] areas) {
     Scene scene = areas[0].getScene();
-    if (scene == null || scene.getWindow() == null || !scene.getWindow().isFocused())
+    if (scene == null || scene.getWindow() == null)
       return;
     boolean inside = false;
     for (Node at = scene.getFocusOwner(); at != null && !inside; at = at.getParent()) {
       for (Node area : areas)
         inside |= at == area;
     }
+    if (!inside) {
+      // 붙이는 건 창이 앞에 없어도 한다 — 뗀 창을 되돌리는 것뿐이라 남의 IME 를 건드릴 일이 없다
+      restore();
+      return;
+    }
+    if (!scene.getWindow().isFocused())
+      return;
     try {
       // FX 스레드가 곧 창 메시지를 돌리는 스레드라, 지금 앞에 있는 우리 창이 잡힌다
       Pointer hwnd = Imm32.User32.INSTANCE.GetActiveWindow();
-      if (hwnd != null)
-        Imm32.INSTANCE.ImmAssociateContextEx(hwnd, null, inside ? 0 : Imm32.IACE_DEFAULT);
+      if (hwnd != null && Imm32.INSTANCE.ImmAssociateContextEx(hwnd, null, 0))
+        detached.add(hwnd);
     } catch (Throwable t) {
       // JNA 가 안 올라오면 예전처럼 — 한글 모드에선 영문으로 바꿔 쳐야 할 뿐
+    }
+  }
+
+  /** 뗀 IME 를 모두 도로 붙인다 (지금 앞에 있는 창도 함께). 글자 칸에 포커스를 줄 때마다 부른다 */
+  private static void restore() {
+    if (!System.getProperty("os.name", "").startsWith("Windows"))
+      return;
+    try {
+      Pointer active = Imm32.User32.INSTANCE.GetActiveWindow();
+      if (active != null)
+        detached.add(active);
+      for (Pointer hwnd : detached) {
+        if (Imm32.User32.INSTANCE.IsWindow(hwnd))
+          Imm32.INSTANCE.ImmAssociateContextEx(hwnd, null, Imm32.IACE_DEFAULT);
+      }
+      detached.clear();
+    } catch (Throwable t) {
+      // 위와 같다
     }
   }
 
@@ -113,6 +153,8 @@ public final class Ime {
       User32 INSTANCE = Native.load("user32", User32.class, W32APIOptions.DEFAULT_OPTIONS);
 
       Pointer GetActiveWindow();
+
+      boolean IsWindow(Pointer hWnd);
     }
   }
 }

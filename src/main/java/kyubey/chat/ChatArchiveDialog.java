@@ -249,8 +249,11 @@ public final class ChatArchiveDialog {
   private static HBox bubble(ChatHistory.Line line, LocalDateTime at, String name, boolean noteSingleClick, int theirsIndex,
       Runnable jump) {
     boolean mine = line.mine;
+    Region picture = line.image == null ? null : ChatImage.bubble(line);
     Region label;
-    if (line.note) {
+    if (picture != null) {
+      label = picture;
+    } else if (line.note) {
       // 보기만 하는 창이라 열어봤다고 따로 남기지는 않는다
       label = SecretNote.bubble(line, name, noteSingleClick, null);
     } else {

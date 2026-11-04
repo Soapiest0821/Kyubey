@@ -2,12 +2,15 @@ package kyubey;
 
 import kyubey.capture.Capture;
 import kyubey.search.Builtin;
+import kyubey.todo.AuroraTodos;
 import kyubey.todo.TodoDialog;
 import kyubey.todo.TodoPane;
 import kyubey.todo.TodoStore;
 import kyubey.chat.BasePrompt;
 import kyubey.chat.ChatProfile;
+import kyubey.chat.PartnerFloat;
 import kyubey.search.HistoryManager;
+import kyubey.search.TopDialog;
 import kyubey.search.MacroManager;
 import kyubey.search.SearchResult;
 import kyubey.core.PatchNotesDialog;
@@ -37,6 +40,8 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
+import javafx.beans.value.ChangeListener;
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
@@ -55,13 +60,16 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.geometry.Rectangle2D;
+import javafx.stage.Popup;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
-import javafx.stage.Window;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -76,8 +84,17 @@ public class Main extends Application {
   /** 폴더 이름 → 경로들. 처음 설정에서 고른 폴더를 훑어서 채운다 (FolderMapper) */
   private static final String DIRS_JSON_PATH = FolderMapper.OUTPUT_JSON_PATH;
 
-  /** 빈 입력창에서 ↑ 로 꺼내 볼 최근 명령어 · /top 랭킹을 한 번에 몇 줄까지 보여줄지 */
+  /** 빈 입력창에서 ↑ 로 꺼내 볼 최근 명령어를 한 번에 몇 줄까지 보여줄지 */
   private static final int HISTORY_LIMIT = 8;
+  /** /top 랭킹 팝업에 몇 등까지 보여줄지 */
+  private static final int TOP_LIMIT = 10;
+
+  /** 결과 목록 높이 (네 줄쯤). ↑ 기록은 줄 수만큼만 잡되 이보다 크게는 안 편다 */
+  private static final double LIST_HEIGHT = 200;
+  /** ↑ 기록 한 줄 높이 — 줄 수만큼만 펴려고 고정해 둔다 (.list-cell 의 18px 글자 + 위아래 여백 10 씩) */
+  private static final double HISTORY_ROW = 46;
+  /** 평소 화면에서 입력창 위 여백 */
+  private static final double TOP_PAD = 100;
 
   /** 마도카를 창 오른쪽·아래 모서리에서 이만큼 띄워 세운다 */
   private static final double MASCOT_MARGIN = 12;
@@ -99,15 +116,16 @@ public class Main extends Application {
   /** 안 읽은 말 배지를 마도카 그림에서 왼쪽으로 이만큼 떼어 놓는다 */
   private static final double BADGE_GAP = 8;
 
-  /** 입력창 · 결과 목록 너비 — 평소와 전체화면 기본 화면 */
+  /** 입력창 · 결과 목록 너비 — 평소와 오로라 */
   private static final double INPUT_WIDTH = 350;
   private static final double FULL_INPUT_WIDTH = 520;
 
-  /** 전체화면 기본 화면에서 입력창 둘레로 번지는 빛의 여백 — 이 안을 누르면 안 닫힌다 */
+  /** 오로라에서 입력창 둘레로 번지는 빛의 여백 — 이 안을 누르면 안 닫힌다 */
   private static final double GLOW_PAD = 120;
 
-  /** 전체화면 수다 화면에서 대화 칸 너비 — 화면 가운데에 이만큼만 세운다 */
-  private static final double FULL_CHAT_WIDTH = 760;
+  /** 전체화면이 아닐 때 창 크기 */
+  private static final double WINDOW_WIDTH = 600;
+  private static final double WINDOW_HEIGHT = 400;
 
   /** 아무것도 안 하고 있을 때 입력창에 떠 있는 안내 */
   private static final String PROMPT = "여기에 입력하세요";
@@ -123,6 +141,13 @@ public class Main extends Application {
   private LlmClient llm;
   private HistoryManager history;
   private ListView<SearchResult> resultList;
+  /** 결과 목록이 ↑ 기록이라 입력창 위에 떠 있는지 (showHistory, placeList) */
+  private final BooleanProperty historyUp = new SimpleBooleanProperty();
+  /**
+   * 평소 화면에서 ↑ 기록을 띄우는 판. 입력창 위 여백이 목록보다 좁아서 창 안에 넣으면 입력창을 밀어내야 하니,
+   * 창 밖으로 삐져나가도 되게 따로 띄운다. 바깥을 누르거나 창이 포커스를 잃으면 접힌다
+   */
+  private final Popup historyPopup = new Popup();
   /** ← 로 들어오는 목표 쪼개기 화면 */
   private GoalPane goalPane;
   /** ↑ 로 들어오는 메모장 */
@@ -132,6 +157,8 @@ public class Main extends Application {
   /** 입력창 밑 오늘 할 일 (이 컴퓨터에 날마다 적어둔다) */
   private TodoPane todoPane;
 
+  /** 전체화면 수다 오른쪽 위의 상대 목록 · 안 읽은 말 판 (applyFull) */
+  private PartnerFloat partnerFloat;
   /** 수다 상대 말을 윈도우 알림으로 띄우는 곳 (buildChat) */
   private WinNotify notify;
 
@@ -140,6 +167,8 @@ public class Main extends Application {
 
   /** 마도카 그림 너비 + 띄운 거리 — 새로 만든 수다 화면에도 같은 세로줄을 비우게 기억해둔다 (placeBeside) */
   private double chatReserve = -1;
+  /** 전체화면이 아닐 때 창 너비 — 전체화면 수다의 대화 칸을 이 창에서 보던 너비 그대로 세운다 (fullChatWidth) */
+  private double windowWidth = WINDOW_WIDTH;
 
   /** 화면을 통째로 갈아끼우는 자리 — 한 줄 검색 / 목표 쪼개기 / 마도카랑 수다 가 여기서 바뀐다 */
   private BorderPane root;
@@ -188,12 +217,19 @@ public class Main extends Application {
   private boolean syncing;
   /** 창을 숨기는 중 — 숨기면서 전체화면이 풀려도 fullMode 는 그대로 둔다 */
   private boolean hiding;
-  /** 기본 화면을 전체화면으로 띄운 중 — 할 일을 감추고, 입력창이 가운데에 박혀 있게 결과 목록 자리를 늘 잡아둔다 */
-  private final BooleanProperty homeFull = new SimpleBooleanProperty();
+  /**
+   * 오로라를 쓰는 중인지 — 기본 위젯 대신 화면 가운데 빛 속에 입력창만 띄우는 것. 전체화면 모드(fullMode)와는 따로 논다
+   * (창은 화면을 덮지만 기본 위젯을 크게 편 게 아니다). 단축키로 열 화면을 설정에서 오로라로 고르면 열 때마다 이걸로 뜨고,
+   * 빈 입력창에서 ← → ↓ 면 기본 위젯으로 나간다. 기본 화면에서만 켜져 있다 (applyFull)
+   */
+  private boolean aurora;
+  /** 오로라가 지금 올라와 있는지 — 할 일 줄을 감추고, 입력창이 가운데에 박혀 있게 결과 목록 자리를 늘 잡아둔다 */
+  private final BooleanProperty auroraOn = new SimpleBooleanProperty();
+  /** 오로라의 빛 판 — 할 일 풍선(auroraTodos) 위에 입력창(topBox) 을 얹는다 */
+  private final StackPane auroraBox = new StackPane();
+  private AuroraTodos auroraTodos;
   /** 전체화면 수다라 그림을 끌어 옮길 수 있는 중. 끌어둔 자리는 거기서 나오면 되돌린다 */
   private boolean mascotFloating;
-  /** 마지막으로 fullMode 를 바꾼 때 (System.nanoTime) — 포커스로 전체화면을 켤 때 본다 */
-  private long fullChangedAt = System.nanoTime() - 1_000_000_000L;
 
   @Override
   public void start(Stage stage) {
@@ -217,11 +253,32 @@ public class Main extends Application {
 
     // 결과 리스트
     resultList = new ListView<>();
-    resultList.setPrefHeight(200);
+    resultList.setPrefHeight(LIST_HEIGHT);
     resultList.setMaxWidth(INPUT_WIDTH);
     resultList.setVisible(false);
     // 전체화면 기본 화면에선 안 보일 때도 자리를 잡는다 — 목록이 뜨고 져도 입력창이 가운데에서 안 움직이게
-    resultList.managedProperty().bind(resultList.visibleProperty().or(homeFull));
+    resultList.managedProperty().bind(resultList.visibleProperty().or(auroraOn));
+    // 따로 띄운 ↑ 기록 판에 들어가도 키는 입력창이 받게 — 판이 포커스를 쥐면 ↑↓ 를 목록이 먼저 먹는다
+    resultList.setFocusTraversable(false);
+
+    // 자리는 placeHistory 가 직접 잡는다. 판 밑변을 기준점에 거는 방식(CONTENT_BOTTOM_LEFT)은 띄우는 순간의
+    // 크기로 자리를 잡는데, 그 크기가 입력창 밑에서 쓰던 200 짜리라 줄이 적으면 입력창에서 떠 버렸다.
+    // autoFix 도 끈다 — 창을 화면 위쪽으로 올려 두면 판이 화면 밖으로 안 나가게 밀려 내려와 입력창을 덮었다
+    historyPopup.setAutoFix(false);
+    resultList.heightProperty().addListener((obs, was, is) -> placeHistory());
+    // 띄운 채로 창이 움직이면 (Win+화살표 같은 것) 따라간다
+    stage.xProperty().addListener((obs, was, is) -> placeHistory());
+    stage.yProperty().addListener((obs, was, is) -> placeHistory());
+    historyPopup.setAutoHide(true);
+    // Esc 는 입력창 쪽에서 목록만 닫게 둔다. 판이 먼저 먹으면 입력창은 목록이 닫힌 줄 알고 창까지 내린다
+    historyPopup.setHideOnEscape(false);
+    historyPopup.setConsumeAutoHidingEvents(false);
+    historyPopup.setOnAutoHide(e -> hideResults());
+    // 단축키로 창을 내리면 판도 따라 닫히니, 목록도 접힌 걸로 맞춘다
+    stage.showingProperty().addListener((obs, was, is) -> {
+      if (!is && historyUp.get())
+        hideResults();
+    });
 
     resultList.setCellFactory(lv -> {
       ListCell<SearchResult> cell = new ListCell<>() {
@@ -254,6 +311,8 @@ public class Main extends Application {
       if (results.isEmpty()) {
         hideResults();
       } else {
+        // 기록을 골라 입력창에 올렸거나 기록을 띄운 채 쳤으면, 검색 결과는 평소 자리(입력창 밑)로
+        placeList(false);
         resultList.getItems().setAll(results);
         selectResult(0, 0);
         resultList.setVisible(true);
@@ -277,7 +336,7 @@ public class Main extends Application {
       // 빈 입력창에서 ↑ : 최근에 쓴 명령어 꺼내 보기. 많이 쓴 순은 /top, 맨손 ↓ 는 메모장 (아래 필터)
       // 글자가 있을 땐 평소대로 목록 오르내리기라, 목록이 닫혀 있고 입력창도 빈 지금만 가로챈다
       if (!resultList.isVisible() && inputField.getText().isBlank() && e.getCode() == KeyCode.UP) {
-        showHistory(history.recent(HISTORY_LIMIT), "🕘", false);
+        showHistory(history.recent(HISTORY_LIMIT));
         e.consume();
         return;
       }
@@ -287,6 +346,13 @@ public class Main extends Application {
 
       int currentIndex = resultList.getSelectionModel().getSelectedIndex();
       int size = resultList.getItems().size();
+
+      // 입력창 위에 띄운 ↑ 기록의 맨 밑 줄(입력창 바로 위)에서 한 번 더 ↓ 면 입력창으로 내려온 셈 — 목록을 접는다
+      if (e.getCode() == KeyCode.DOWN && historyUp.get() && currentIndex >= size - 1) {
+        hideResults();
+        e.consume();
+        return;
+      }
 
       if (e.getCode() == KeyCode.DOWN) {
         selectResult(Math.min(currentIndex + 1, size - 1), 2);
@@ -310,7 +376,8 @@ public class Main extends Application {
     todoRow.setPadding(new Insets(0, 0, 0, TODO_INSET));
     todoRow.setMaxWidth(Double.MAX_VALUE);
     // 전체화면 기본 화면에선 입력창만 남긴다
-    todoRow.visibleProperty().bind(resultList.visibleProperty().not().and(homeFull.not()));
+    // 입력창 위에 뜨는 ↑ 기록은 자리를 안 뺏으니 그대로 둔다
+    todoRow.visibleProperty().bind(resultList.visibleProperty().and(historyUp.not()).not().and(auroraOn.not()));
     todoRow.managedProperty().bind(todoRow.visibleProperty());
     // 새로 읽는 건 창에 포커스가 들어올 때만 (처음 켤 때도 포커스가 들어오면서 읽는다).
     // 아침 여섯 시가 지나 전날 못 끝낸 게 넘어왔으면 마도카가 재촉한다 (하루 한 번, ChatPane.remindTodos)
@@ -341,7 +408,7 @@ public class Main extends Application {
     });
     // 할 일 자리 빈 데를 두 번 누르면 할 일 창 (메뉴의 TODO 와 같다)
     todoPane.setOnOpen(() -> {
-      TodoDialog.show(stage, todoPane);
+      TodoDialog.show(stage, todoPane, fullMode);
       todoPane.refresh();
     });
     // 할 일을 절반 · 다 끝냈을 때, 다 끝낸 뒤 더 적은 걸 끝냈을 때 마도카가 칭찬한다 (TodoPane.milestone, ChatPane.praiseTodo)
@@ -371,17 +438,35 @@ public class Main extends Application {
     topBox.setAlignment(Pos.CENTER);
     topBox.setPadding(new Insets(100, 0, 0, 0));
 
+    // 오로라 — 할 일 풍선은 입력창 뒤에서 다니고, 빈 데는 빛 판이 받는다 (빛 밖만 닫히게)
+    auroraTodos = new AuroraTodos(todoPane);
+    auroraTodos.setInput(inputField);
+    auroraBox.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+    auroraBox.getStyleClass().add("full-glow");
+
     root = new BorderPane();
     root.setTop(topBox);
-    focusTarget = inputField;
-    // 전체화면 기본 화면에선 입력창 둘레 빛(topBox) 밖 — 어두운 바탕 — 을 누르면 위젯을 닫는다
+    // 오로라에선 바탕이 투명해 빛(auroraBox) 밖 클릭은 뒤 창으로 빠진다 — 그래도 root 까지 오면 위젯을 닫는다
     root.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
-      if (!homeFull.get() || e.getTarget() != root)
+      if (!auroraOn.get() || e.getTarget() != root)
         return;
       e.consume();
       // 단축키를 못 걸었으면 숨겼다간 못 부른다 — 그땐 Esc 처럼 끄지 말고 그냥 둔다
       if (hotkeyReady)
         hide(stage);
+    });
+    // 빛 밖 클릭은 뒤 창으로 빠지니, 그 창으로 포커스가 넘어가면 닫는다.
+    // 우리 창(설정 · 팝업 등)으로 옮겨간 거면 그대로 둔다 — 포커스가 자리 잡은 뒤에 본다
+    stage.focusedProperty().addListener((obs, was, is) -> {
+      if (is || !auroraOn.get() || !hotkeyReady)
+        return;
+      Platform.runLater(() -> {
+        if (!auroraOn.get() || !stage.isShowing() || stage.isFocused())
+          return;
+        if (javafx.stage.Window.getWindows().stream().anyMatch(javafx.stage.Window::isFocused))
+          return;
+        hide(stage);
+      });
     });
 
     // ── 화살표 키 ──
@@ -448,6 +533,15 @@ public class Main extends Application {
         return;
       }
 
+      // 오로라에선 빈 입력창의 맨손 ← → ↓ 가 기본 위젯을 연다 (기본 위젯에선 목표 · 수다 · 메모로 가는 키).
+      // Alt 를 같이 누르면 기본 위젯 없이 곧장 목표 · 수다 · 메모로 (아래 평소 길) — 거기서 돌아오면 기본 위젯이다
+      if (auroraOn.get() && text.isEmpty() && !resultList.isVisible() && !e.isAltDown()
+          && (e.getCode() == KeyCode.LEFT || e.getCode() == KeyCode.RIGHT || e.getCode() == KeyCode.DOWN)) {
+        e.consume();
+        leaveAurora();
+        return;
+      }
+
       if (e.getCode() == KeyCode.LEFT && (e.isAltDown() || text.isEmpty())) {
         e.consume();
         showGoals(text);
@@ -472,6 +566,21 @@ public class Main extends Application {
       if (!e.isAltDown())
         return;
 
+      // 입력창 위에 띄운 ↑ 기록은 Alt+↓ 로 접는다 (맨손 ↓ 는 그 목록 안에서 입력창 쪽으로 내려가기라)
+      if (e.getCode() == KeyCode.DOWN && historyUp.get() && resultList.isVisible()) {
+        e.consume();
+        hideResults();
+        return;
+      }
+
+      // Alt+↓ : 글자가 있어도 메모장으로 (Alt+← 와 같은 이치). 돌아오는 길은 메모장의 Alt+↑
+      if (e.getCode() == KeyCode.DOWN) {
+        e.consume();
+        hideResults();
+        showNotepad();
+        return;
+      }
+
       if (e.getCode() == KeyCode.RIGHT && !text.isBlank()) {
         e.consume();
         history.record(text);
@@ -479,6 +588,7 @@ public class Main extends Application {
             SearchResult.Type.GOOGLE, text.trim(), null));
         inputField.clear();
         hideResults();
+        launched(stage);
         return;
       }
     });
@@ -508,6 +618,14 @@ public class Main extends Application {
     StackPane.setAlignment(badges, Pos.BOTTOM_RIGHT);
     layers.getChildren().add(badges);
 
+    // 수다를 전체화면으로 펴면 오른쪽 위에 상대 목록 · 안 읽은 말 판을 띄운다 (applyFull)
+    partnerFloat = new PartnerFloat(picked -> {
+      SettingsDialog.saveChatPartner(picked.id);
+      switchChat(stage);
+    });
+    partnerFloat.setVisible(false);
+    layers.getChildren().add(partnerFloat);
+
     reserveEmptyMascot = SettingsDialog.load().reserveMascotSpace;
     // 수다 화면이 그림 밑에 깔리지 않게 그림이 선 세로줄을 통째로 비우고,
     // 배지는 그 세로줄 왼쪽에 세운다. 그림 너비는 이미지가 다 올라온 뒤에야 잡히니
@@ -525,7 +643,11 @@ public class Main extends Application {
     });
 
     // Scene & Stage 설정
-    Scene scene = new Scene(layers, 600, 400);
+    Scene scene = new Scene(layers, WINDOW_WIDTH, WINDOW_HEIGHT);
+    scene.widthProperty().addListener((obs, was, is) -> {
+      if (!fullMode && !stage.isFullScreen())
+        windowWidth = is.doubleValue();
+    });
     // style.css 를 건다 — "설정" 에서 골라둔 색 테마를 입히고, 투명도만큼 바탕 알파를 곱해서
     SettingsDialog look = SettingsDialog.load();
     SettingsDialog.applyStyle(scene, look.widgetOpacity, look.widgetTheme);
@@ -560,18 +682,27 @@ public class Main extends Application {
         // 메모장에선 ←/→ 로 딴 화면에 안 간다 — 돌아오는 길은 ↑ 하나
       } else {
         e.consume();
-        if (code == KeyCode.LEFT)
+        if (auroraOn.get() && !e.isAltDown())
+          leaveAurora();
+        else if (code == KeyCode.LEFT)
           showGoals("");
         else
           showChat();
       }
     });
 
-    // F11 : 기본 화면 · 수다를 전체화면으로 켜고 끈다. 목표 맵 · 메모는 그 화면이 직접 받아서 크게 편다 (expand)
+    // F11 : 기본 화면 · 수다를 전체화면으로 켜고 끈다. 목표 맵 · 메모는 그 화면이 직접 받아서 크게 편다 (expand).
+    // 오로라에서 누르면 기본 위젯을 전체화면으로 연다
     scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
       if (e.getCode() != KeyCode.F11 || root.getCenter() == goalPane || root.getCenter() == notepadPane)
         return;
       e.consume();
+      if (auroraOn.get()) {
+        aurora = false;
+        setFullMode(true);
+        Platform.runLater(() -> Ime.focus(inputField));
+        return;
+      }
       setFullMode(!fullMode);
     });
 
@@ -598,40 +729,67 @@ public class Main extends Application {
     stage.setScene(scene);
     // 작업 표시줄·Alt+Tab 에 뜰 얼굴 (show() 전에 걸어야 첫 그림부터 제대로 나온다)
     AppIcon.apply(stage);
-    // 타이틀바가 없으니 배경 아무 데나 잡고 끌어서 옮긴다. 전체화면이면 창 대신 판을 잠깐 옮긴다 —
-    // 기본 화면은 입력창 둘레 빛(topBox)을, 나머지는 화면 통째로. 화면을 바꾸거나 숨기면 제자리로 (applyFull, hide)
-    WindowDrag.makeDraggable(stage, root, () -> homeFull.get() ? topBox : root);
-    stage.setX(800);
-    stage.setY(120);
+    // 타이틀바가 없으니 배경 아무 데나 잡고 끌어서 옮긴다. 전체화면 · 오로라면 창 대신 판을 잠깐 옮긴다 —
+    // 오로라는 빛 판(auroraBox)을, 나머지는 화면 통째로. 화면을 바꾸거나 숨기면 제자리로 (applyFull, hide)
+    WindowDrag.makeDraggable(stage, root, () -> auroraOn.get() ? auroraBox : root);
+    // 처음엔 화면 정가운데에 뜬다
+    Rectangle2D primary = Screen.getPrimary().getVisualBounds();
+    double startX = primary.getMinX() + (primary.getWidth() - WINDOW_WIDTH) / 2;
+    double startY = primary.getMinY() + (primary.getHeight() - WINDOW_HEIGHT) / 2;
+    stage.setX(startX);
+    stage.setY(startY);
     // 전체화면은 F11 이나 목표 맵 · 메모를 크게 펼 때 (applyFull). Esc 는 각 화면이 먼저 받게 —
     // JavaFX 기본 Esc 풀기와 안내 문구는 끈다. 숨기면서 풀린 건 다시 부를 때 도로 켜고 (reveal),
     // 그 밖에 딴 데서 풀리면 전체화면을 그만 쓰는 걸로 친다
     stage.setFullScreenExitKeyCombination(KeyCombination.NO_MATCH);
     stage.setFullScreenExitHint("");
+    // 오로라도 화면을 덮는 투명 전체화면 창이라, 딴 데서 풀리면 같이 끝낸다
     stage.fullScreenProperty().addListener((obs, was, is) -> {
-      if (!is && fullMode && !hiding && stage.isShowing())
+      if (!is && (fullMode || aurora) && !hiding && stage.isShowing()) {
+        aurora = false;
         setFullMode(false);
-    });
-    // 포커스가 들어올 때마다 전체화면 (설정의 focusFullScreen). 이 앱의 딴 창(설정 · 지난 대화…)을 닫고
-    // 돌아온 건 빼고 — 떠 있는 동안 F11 로 꺼둔 걸 대화창 하나 닫았다고 도로 켜면 곤란하다
-    boolean[] lostToOwn = new boolean[1];
-    stage.focusedProperty().addListener((obs, was, is) -> {
-      if (!is) {
-        Platform.runLater(() -> lostToOwn[0] = Window.getWindows().stream().anyMatch(w -> w != stage && w.isFocused()));
-        return;
       }
-      // 전체화면을 막 켜고 끈 참이면 그 바람에 포커스가 잠깐 들락인 것일 수 있어 넘긴다
-      boolean settling = System.nanoTime() - fullChangedAt < 500_000_000L;
-      if (!lostToOwn[0] && !settling && !fullMode && SettingsDialog.load().focusFullScreen)
-        setFullMode(true);
-      lostToOwn[0] = false;
     });
+    // Win+←/→/↑ 로 윈도우가 창을 반쪽에 붙이거나 최대화하면, 투명 창이라 판이 늘어나 엉망이 된다.
+    // 가장자리를 끌어 크기를 바꿀 일이 없으니 막아두면 윈도우도 붙이기 · 최대화를 안 건다 (WS_THICKFRAME 이 빠진다)
+    stage.setResizable(false);
+    // 그래도 새어 들어오면 되돌린다 — 최대화는 풀고, 전체화면이 아닌데 창 크기가 바뀌었으면 원래 크기 · 자리로
+    stage.maximizedProperty().addListener((obs, was, is) -> {
+      if (is)
+        Platform.runLater(() -> stage.setMaximized(false));
+    });
+    double[] normalAt = { startX, startY };
+    ChangeListener<Number> moved = (obs, was, is) -> Platform.runLater(() -> {
+      if (normalSize(stage)) {
+        normalAt[0] = stage.getX();
+        normalAt[1] = stage.getY();
+      }
+    });
+    stage.xProperty().addListener(moved);
+    stage.yProperty().addListener(moved);
+    ChangeListener<Number> resized = (obs, was, is) -> Platform.runLater(() -> {
+      if (stage.isFullScreen() || fullMode || aurora || hiding || !stage.isShowing() || normalSize(stage))
+        return;
+      stage.setMaximized(false);
+      stage.setWidth(WINDOW_WIDTH);
+      stage.setHeight(WINDOW_HEIGHT);
+      stage.setX(normalAt[0]);
+      stage.setY(normalAt[1]);
+    });
+    stage.widthProperty().addListener(resized);
+    stage.heightProperty().addListener(resized);
     stage.show();
-    // 처음 뜰 때 포커스가 안 들어와도 설정대로 띄운다
-    if (look.focusFullScreen && !fullMode)
+    // 처음 뜰 때도 설정대로 띄운다 — 오로라거나 (단축키로 열 화면), 기본 위젯을 전체화면으로 (다시 열 때는 reveal)
+    if (look.hotkeyAurora()) {
+      aurora = true;
+      applyFull();
+    } else if (look.openFullScreen && !fullMode) {
       setFullMode(true);
-    // 처음 켤 때도 한글 조합이 보이게, 포커스는 Ime 를 거쳐서 준다 (Ime 주석 참고)
-    Platform.runLater(() -> Ime.focus(inputField));
+    }
+    // 처음 켤 때도 다시 열 때처럼 진짜로 앞으로 끌어온다 — JVM 이 뜨는 사이 사용자가 딴 창을 만지면
+    // 포그라운드 잠금에 걸려 창만 그려지고 키보드는 원래 앱에 남는다 (Foreground 주석 참고).
+    // 포커스는 bringToFront 안에서 Ime 를 거쳐 입력칸으로 준다 (한글 조합이 보이게, Ime 주석 참고)
+    bringToFront(stage);
     // 처음 켰으면 (settings.json 이 없으면) 훑을 폴더부터 고르게 한다
     if (!SettingsDialog.exists())
       Platform.runLater(() -> settings(stage));
@@ -679,6 +837,8 @@ public class Main extends Application {
     chatReserve = reserve + MASCOT_MARGIN;
     // 전체화면 수다는 가운데에 서고 그림은 떠 있어서 비울 세로줄이 없다 (applyFull)
     chatPane.reserveRight(mascotFloating ? 0 : chatReserve);
+    if (mascotFloating)
+      chatPane.setMaxWidth(fullChatWidth());
     goalPane.reserveRight(reserve, height, MASCOT_MARGIN);
     notepadPane.reserveRight(reserve, height, MASCOT_MARGIN);
     StackPane.setMargin(badges, new Insets(
@@ -752,6 +912,9 @@ public class Main extends Application {
     unread = count;
     unreadBadge.setText(count > 1 ? "💬 " + count : "💬");
     unreadBadge.setVisible(count > 0 && !mascotHidden && !mascotCovered);
+    // 전체화면 수다의 상대 목록에도 안 읽은 수가 뜬다
+    if (partnerFloat != null && partnerFloat.isVisible())
+      partnerFloat.refresh(chatPane);
   }
 
   /**
@@ -785,72 +948,111 @@ public class Main extends Application {
 
   private void setFullMode(boolean on) {
     fullMode = on;
-    fullChangedAt = System.nanoTime();
     applyFull();
   }
 
-  /** 기본 화면이 올라와 있는지 — 평소엔 위쪽, 전체화면이면 가운데에 선다 */
+  /** 기본 화면이 올라와 있는지 — 평소 · 전체화면엔 위쪽, 오로라면 빛 판에 담겨 가운데에 선다 */
   private boolean atHome() {
-    return root.getTop() == topBox || root.getCenter() == topBox;
+    return root.getTop() == topBox || root.getCenter() == auroraBox;
+  }
+
+  /** 오로라에서 기본 위젯으로 — 기본 위젯은 설정대로 (openFullScreen) 전체화면이거나 창으로 선다 */
+  private void leaveAurora() {
+    aurora = false;
+    fullMode = SettingsDialog.load().openFullScreen;
+    applyFull();
+    Platform.runLater(() -> Ime.focus(inputField));
   }
 
   /**
-   * 지금 화면을 fullMode 에 맞춰 세운다. 화면을 갈아끼울 때마다도 부른다.
-   *  - 기본 화면: 창 전체를 테마색으로 어둡게 깔고 (.full-dim), 입력창만 가운데에 빛(.full-glow)을 두르고 띄운다.
-   *    할 일 · 그림 · 배지는 감춘다. 빛 밖을 누르면 닫힌다 (root 의 MOUSE_PRESSED 필터)
-   *  - 수다: 대화 칸을 가운데에 FULL_CHAT_WIDTH 로 세우고, 그림은 끌어 옮길 수 있게 띄운다
+   * 지금 화면을 fullMode · aurora 에 맞춰 세운다. 화면을 갈아끼울 때마다도 부른다.
+   *  - 오로라 (기본 화면에서만): 바탕은 투명하게 비우고 (.full-dim), 입력창만 가운데 빛 판(.full-glow)에 담아 띄운다.
+   *    할 일 줄 · 그림 · 배지는 감추고, 설정(auroraTodos)이 켜져 있으면 할 일을 빛 속에 풍선으로 띄운다 (AuroraTodos).
+   *    빛 밖 클릭은 뒤 창으로 넘어가고, 포커스가 그리 가면 닫힌다
+   *  - 기본 화면 전체화면: 일단 기본 위젯 생김새 그대로 크게만 편다
+   *  - 수다: 대화 칸을 가운데에 창에서 보던 너비 그대로 세우고 (fullChatWidth), 그림은 끌어 옮길 수 있게 띄운다
    *  - 목표 맵 · 메모: 크게 편다. 그림과 배지는 펴진 판 오른쪽 아래를 덮지 않게 치운다
    * 숨김 설정(mascotHidden)은 그대로 둔다.
    */
   private void applyFull() {
     Node screen = root.getCenter();
+    // 오로라는 기본 화면에서만 — 딴 화면으로 가면 (Alt+← → ↓ 로 목표 · 수다 · 메모, 알림 누르기…) 끝나고,
+    // 거기서부턴 기본 위젯이다 (설정대로 전체화면이거나 창). 그 화면에서 돌아오면 기본 위젯 기본 화면이 선다
+    if (!atHome() && aurora) {
+      aurora = false;
+      fullMode = SettingsDialog.load().openFullScreen;
+    }
     syncing = true;
     goalPane.setExpanded(fullMode && screen == goalPane);
     notepadPane.setExpanded(fullMode && screen == notepadPane);
     syncing = false;
 
-    boolean home = fullMode && atHome();
-    homeFull.set(home);
+    boolean home = aurora;
+    auroraOn.set(home);
     // 전체화면에서 끌어 옮겨둔 판은 화면이 바뀌면 제자리로 (WindowDrag)
     resetDrag();
-    if (atHome() && home != (root.getCenter() == topBox)) {
+    if (atHome() && home != (root.getCenter() == auroraBox)) {
       // 한 노드는 한 자리에만 — 빼고 나서 건다
       root.setTop(null);
       root.setCenter(null);
-      if (home)
-        root.setCenter(topBox);
-      else
+      auroraBox.getChildren().clear();
+      if (home) {
+        auroraBox.getChildren().setAll(auroraTodos, topBox);
+        root.setCenter(auroraBox);
+      } else {
         root.setTop(topBox);
+      }
     }
+    // 할 일 풍선은 설정대로 — 빛 판 크기 · 모양은 그대로 두고 그 안에서 다닌다
+    auroraTodos.setVisible(home && SettingsDialog.load().auroraTodos);
+    // 빛 판 안에선 입력창 둘레 빈 데를 풍선이 받게 (VBox 는 제 네모 전체로 마우스를 먹는다)
+    topBox.setPickOnBounds(!home);
     double width = home ? FULL_INPUT_WIDTH : INPUT_WIDTH;
     inputField.setPrefWidth(width);
     resultList.setMaxWidth(width);
-    // 빛은 위아래가 같아야 입력창이 그 한가운데에 온다 — 밑에 늘 잡아둔 결과 목록 자리만큼 위도 비운다
-    double below = resultList.getPrefHeight() + topBox.getSpacing();
-    topBox.setPadding(home ? new Insets(GLOW_PAD + below, GLOW_PAD, GLOW_PAD, GLOW_PAD) : new Insets(100, 0, 0, 0));
+    // 띄워 둔 ↑ 기록은 입력창 자리가 바뀌니 접는다
+    if (historyUp.get())
+      hideResults();
+    else
+      placeList(false);
     double max = home ? Region.USE_PREF_SIZE : Double.MAX_VALUE;
     topBox.setMaxSize(max, max);
-    styleIf(topBox, "full-glow", home);
     styleIf(root, "full-dim", home);
 
     boolean chat = fullMode && screen == chatPane;
+    if (partnerFloat != null) {
+      partnerFloat.setVisible(chat);
+      partnerFloat.resetPosition();
+      if (chat)
+        partnerFloat.refresh(chatPane);
+    }
     mascotFloating = chat;
-    chatPane.setMaxWidth(chat ? FULL_CHAT_WIDTH : Double.MAX_VALUE);
+    chatPane.setMaxWidth(chat ? fullChatWidth() : Double.MAX_VALUE);
     chatPane.reserveRight(chat ? 0 : chatReserve);
     if (!chat) {
       mascotView.setTranslateX(0);
       mascotView.setTranslateY(0);
     }
 
-    mascotCovered = fullMode && !chat;
+    // 그림은 오로라 · 크게 편 목표 맵 · 메모에서만 치운다 — 전체화면 기본 화면은 기본 위젯 그대로
+    mascotCovered = home || (fullMode && !chat && !atHome());
     hideMascot(mascotHidden);
     Stage stage = (Stage) root.getScene().getWindow();
-    if (stage != null && stage.isShowing() && stage.isFullScreen() != fullMode)
-      stage.setFullScreen(fullMode);
+    boolean cover = fullMode || home;
+    if (stage != null && stage.isShowing() && stage.isFullScreen() != cover)
+      stage.setFullScreen(cover);
+  }
+
+  /**
+   * 전체화면 수다의 대화 칸 너비. 창에선 오른쪽에 그림 세로줄(chatReserve)을 비우고 남은 만큼이 대화 칸인데,
+   * 전체화면에선 그림이 떠서 그 줄을 안 비우니 — 그만큼 빼야 말풍선 폭이 창에서와 같아진다
+   */
+  private double fullChatWidth() {
+    return windowWidth - Math.max(0, chatReserve);
   }
 
   private void resetDrag() {
-    for (Node node : new Node[] { root, topBox }) {
+    for (Node node : new Node[] { root, topBox, auroraBox }) {
       node.setTranslateX(0);
       node.setTranslateY(0);
     }
@@ -938,7 +1140,7 @@ public class Main extends Application {
     inputField.clear();
     hideResults();
     focusTarget = inputField;
-    // 크게 펴둔 목표 맵 · 메모는 접히고, 전체화면이면 기본 화면도 전체화면으로 선다
+    // 크게 펴둔 목표 맵 · 메모는 접히고, 전체화면이면 기본 화면도 전체화면으로, 오로라면 오로라로 선다
     applyFull();
     Platform.runLater(() -> Ime.focus(inputField));
   }
@@ -958,7 +1160,7 @@ public class Main extends Application {
       showSplit(null);
   }
 
-  /** 빈 입력창에서 ↓ 로 여는 메모장. 오른쪽 그림 위에 메모 목록이 선다 */
+  /** 빈 입력창에서 ↓ (또는 어디서든 Alt+↓) 로 여는 메모장. 오른쪽 그림 위에 메모 목록이 선다 */
   private void showNotepad() {
     root.setTop(null);
     root.setCenter(notepadPane);
@@ -992,18 +1194,20 @@ public class Main extends Application {
     Stage stage = (Stage) root.getScene().getWindow();
     int choice = Notice.ask(stage, "Gemini 키가 하나도 없어서 수다를 못 해.\n지금 등록할래?",
         "키 등록", "나중에");
-    if (choice == 0 && KeysDialog.show(stage, llm) && llm.isReady())
+    if (choice == 0 && KeysDialog.show(stage, llm, fullMode) && llm.isReady())
       return true;
     inputField.setPromptText("Gemini 키부터 등록해줘! (keys)");
     return false;
   }
 
   /**
-   * 빈 입력창에서 ↑ 로 꺼내 보는 최근 명령어, /top 으로 여는 많이 쓴 순 랭킹.
+   * 빈 입력창에서 ↑ 로 꺼내 보는 최근 명령어.
+   * 검색 결과와 달리 입력창 위에 띄우고 아래에서 위로 쌓는다 — 가장 최근 것이 입력창 바로 위라,
+   * ↑ 를 누를수록 더 예전 것으로 올라간다. Alt+↓ 나 Esc 면 접는다.
    * 줄을 누르거나 Enter 면 그 검색어가 입력창에 올라간다 (activate).
    * 남은 기록이 없으면 아무 일도 안 일어난다 (빈 목록을 띄워봐야 볼 게 없어서).
    */
-  private void showHistory(List<HistoryManager.Entry> entries, String icon, boolean withCount) {
+  private void showHistory(List<HistoryManager.Entry> entries) {
     if (entries.isEmpty()) {
       // 조용히 아무 일도 안 일어나면 고장으로 보여서, 왜 빈손인지는 말해준다
       inputField.setPromptText("아직 쌓인 기록이 없어! 한 번 쓰고 나면 여기 뜬다");
@@ -1012,16 +1216,120 @@ public class Main extends Application {
 
     List<SearchResult> items = entries.stream()
         .map(entry -> new SearchResult(
-            icon + " " + entry.cmd + (withCount ? "  (" + entry.count + "번)" : ""),
+            "🕘 " + entry.cmd,
             SearchResult.Type.HISTORY,
             entry.cmd,
             null,
             entry.cmd))
         .collect(Collectors.toList());
+    Collections.reverse(items);
 
+    // 전에 골랐던 줄·스크롤 자리가 남아 있으면 새 목록에서도 그 언저리를 잡는다 — 비우고 시작한다
+    resultList.getSelectionModel().clearSelection();
+    resultList.getFocusModel().focus(-1);
     resultList.getItems().setAll(items);
-    selectResult(0, 0);
     resultList.setVisible(true);
+    placeList(true);
+    int last = items.size() - 1;
+    selectResult(last, 0);
+    // 높이·줄 크기를 막 바꿔서 이번 스크롤은 옛 크기로 계산된다. 레이아웃이 끝난 뒤 맨 밑 줄로 한 번 더 맞춘다
+    Platform.runLater(() -> {
+      if (historyUp.get() && resultList.getItems().size() == items.size()) {
+        resultList.getSelectionModel().select(last);
+        resultList.getFocusModel().focus(last);
+        resultList.scrollTo(last);
+      }
+    });
+  }
+
+  /**
+   * 결과 목록을 입력창 밑(검색 결과)이나 위(↑ 기록)에 건다. 위에 걸 땐 줄 수만큼만 펴서
+   * 줄이 입력창에 붙어 있게 한다. 입력창은 어느 쪽이든 제자리에 둔다 —
+   * 오로라는 위 여백이 넉넉해 그만큼 덜어 그 안에 넣고,
+   * 평소 화면은 위 여백(100)이 목록보다 좁아서 창 밖으로 삐져나가도 되게 따로 띄운다 (historyPopup).
+   */
+  private void placeList(boolean up) {
+    historyUp.set(up);
+    boolean floating = up && !auroraOn.get();
+    double rows = Math.min(LIST_HEIGHT, resultList.getItems().size() * HISTORY_ROW + 2);
+    resultList.setFixedCellSize(up ? HISTORY_ROW : Region.USE_COMPUTED_SIZE);
+    resultList.setPrefHeight(up ? rows : LIST_HEIGHT);
+    // 입력창은 빼면 포커스를 잃으니 목록만 옮겨 단다
+    topBox.getChildren().remove(resultList);
+    historyPopup.hide();
+    historyPopup.getContent().clear();
+    if (floating) {
+      double width = inputField.getWidth();
+      resultList.setPrefWidth(width);
+      // 입력창 밑에서 쓰던 크기 그대로 판에 붙으면 첫 자리를 그 크기로 잡는다 — 새 크기로 미리 맞춰 둔다
+      resultList.resize(width, rows);
+      // 입력창 밑(검색 결과)이나 전체화면 빛 안에 놓였던 자리(layoutX/Y)가 그대로 따라온다 — 판은 그걸 안 지워서
+      // 목록이 판 안에서 그만큼 밀려 그려졌다 (위젯 한가운데, 전체화면을 오간 뒤엔 화면 가운데 아래).
+      // 판 왼쪽 위에 붙여야 판 자리 = 목록 자리가 된다
+      resultList.relocate(0, 0);
+      historyPopup.getContent().add(resultList);
+      historyPopup.getScene().getStylesheets().setAll(inputField.getScene().getStylesheets());
+      Bounds at = inputField.localToScreen(inputField.getBoundsInLocal());
+      historyPopup.show(inputField, at.getMinX(), at.getMinY() - topBox.getSpacing() - rows);
+      placeHistory();
+      // 판 크기는 다음 레이아웃에서야 확정되니 한 번 더 맞춘다 (heightProperty 가 안 바뀌는 경우까지)
+      Platform.runLater(this::placeHistory);
+    } else {
+      topBox.getChildren().add(topBox.getChildren().indexOf(inputField) + (up ? 0 : 1), resultList);
+    }
+
+    if (auroraOn.get()) {
+      // 빛은 위아래가 같아야 입력창이 그 한가운데에 온다 — 밑에 늘 잡아둔 결과 목록 자리만큼 위도 비운다.
+      // 목록이 위로 오면 밑 자리는 여백으로 대신 잡는다
+      double below = LIST_HEIGHT + topBox.getSpacing();
+      double over = up ? rows + topBox.getSpacing() : 0;
+      topBox.setPadding(new Insets(GLOW_PAD + below - over, GLOW_PAD, GLOW_PAD + (up ? below : 0), GLOW_PAD));
+    } else {
+      topBox.setPadding(new Insets(TOP_PAD, 0, 0, 0));
+    }
+  }
+
+  /**
+   * 따로 띄운 ↑ 기록 판을 입력창 바로 위에 붙인다 — 판 밑변이 입력창 윗변에서 spacing 만큼 떨어지게.
+   * 지금 판의 실제 높이로 계산하니 줄 수가 바뀌든 창이 움직이든 늘 같은 자리다.
+   * 창을 화면 꼭대기로 올려 둬서 위에 자리가 없으면 입력창 밑으로 뒤집는다 (입력창을 덮지 않게)
+   */
+  private void placeHistory() {
+    if (!historyPopup.isShowing() || inputField.getScene() == null)
+      return;
+    Bounds at = inputField.localToScreen(inputField.getBoundsInLocal());
+    if (at == null)
+      return;
+    double gap = topBox.getSpacing();
+    // 판(Popup) 창의 높이는 못 믿는다 — 띄운 뒤에도 0 이거나, 전에 담았던 크기가 잠깐 남아 있어서
+    // 전체화면을 오가고 나면 엉뚱한 높이로 자리를 잡았다. 판에 담긴 목록의 높이로 잰다
+    // (placeList 가 줄 수만큼으로 정해 둔 높이 — 실제 높이는 전체화면 때 크기가 잠깐 남아 있을 수 있다)
+    double height = resultList.getPrefHeight();
+    double y = at.getMinY() - gap - height;
+    List<Screen> screens = Screen.getScreensForRectangle(at.getMinX(), at.getMinY(), at.getWidth(), at.getHeight());
+    Rectangle2D screen = (screens.isEmpty() ? Screen.getPrimary() : screens.get(0)).getVisualBounds();
+    if (y < screen.getMinY())
+      y = at.getMaxY() + gap;
+    historyPopup.setX(at.getMinX());
+    historyPopup.setY(y);
+  }
+
+  /**
+   * /top : 많이 쓴 순 랭킹을 팝업으로 띄운다 (TopDialog). 줄을 고르면 그 명령어가 입력창에 올라간다 —
+   * ↑ 기록처럼 바로 실행하진 않는다. 기록이 없으면 팝업 없이 왜 빈손인지만 말해준다.
+   */
+  private void showTop(Stage stage) {
+    List<HistoryManager.Entry> entries = history.frequent(TOP_LIMIT);
+    if (entries.isEmpty()) {
+      inputField.setPromptText("아직 쌓인 기록이 없어! 한 번 쓰고 나면 여기 뜬다");
+      return;
+    }
+    String picked = TopDialog.show(stage, entries, fullMode);
+    if (picked != null) {
+      inputField.setText(picked);
+      inputField.positionCaret(inputField.getLength());
+    }
+    Ime.focus(inputField);
   }
 
   /**
@@ -1058,13 +1366,28 @@ public class Main extends Application {
       // 위젯 자체 명령어(exit·restart 같은 것)는 위에서 빠져나가서 안 쌓인다. 꺼내 써봐야 곤란해서.
       history.record(inputField.getText());
       macro.execute(selected);
+      inputField.clear();
+      hideResults();
+      launched(stage);
+      return;
     }
     inputField.clear();
     hideResults();
   }
 
+  /**
+   * 검색 · 앱 · 폴더 같은 걸 열고 나면 위젯을 내린다 — 방금 연 창을 가리지 않게.
+   * 단축키를 못 걸었으면 숨겼다간 못 부르니 그대로 둔다 (Esc 와 달리 종료도 안 한다).
+   */
+  private void launched(Stage stage) {
+    if (hotkeyReady)
+      hide(stage);
+  }
+
   private void hideResults() {
     resultList.setVisible(false);
+    if (historyUp.get())
+      placeList(false);
   }
 
   /**
@@ -1103,8 +1426,8 @@ public class Main extends Application {
     switch (builtin) {
       case EXIT -> System.exit(0);
       case RESTART -> restart();
-      case TOP -> showHistory(history.frequent(HISTORY_LIMIT), "🔥", true);
-      case PATCH -> PatchNotesDialog.show(stage);
+      case TOP -> showTop(stage);
+      case PATCH -> PatchNotesDialog.show(stage, fullMode);
       // 못 찾아서 내려온 "새로 등록하기" 면 찾던 그 글자를 키워드 칸에 담아 보낸다
       case NEW -> AppRegisterDialog.show(stage, macro, arg);
       // 단축키(Win+Alt+Z)와 같은 판. 위젯은 뜬 채로 남아서 화면에 같이 찍힌다 —
@@ -1144,12 +1467,12 @@ public class Main extends Application {
       }
       // 한 주 줄 + 고른 날 할 일 창. 거기서 고친 게 입력창 밑 할 일에도 바로 보이게 닫으면 새로 읽는다
       case TODO -> {
-        TodoDialog.show(stage, todoPane);
+        TodoDialog.show(stage, todoPane, fullMode);
         todoPane.refresh();
       }
       // 저장하면 .env 를 고쳐 쓰고 키를 새로 읽는다 — 껐다 켤 필요 없다
       case KEYS -> {
-        if (KeysDialog.show(stage, llm))
+        if (KeysDialog.show(stage, llm, fullMode))
           inputField.setPromptText(llm.isReady() ? "키 바꿔뒀어!" : "키가 하나도 없어 — LLM 은 쉬어");
       }
       // 키워드에 띄어쓰기가 있는 옛날 항목("한글 2024")도 있어서 뒤는 통째로 넘긴다
@@ -1185,7 +1508,7 @@ public class Main extends Application {
    */
   private void settings(Stage stage) {
     List<String> rootsBefore = SettingsDialog.load().scanRoots;
-    SettingsDialog settings = SettingsDialog.show(stage);
+    SettingsDialog settings = SettingsDialog.show(stage, fullMode);
     if (settings == null)
       return;
 
@@ -1200,6 +1523,8 @@ public class Main extends Application {
     switchChat(stage);
     // 색 테마와 투명도는 창에서 고르는 동안 이미 걸려 있다 — 글꼴은 저장해야 바뀌니 한 번 더 건다
     SettingsDialog.applyStyle(stage.getScene(), settings.widgetOpacity, settings.widgetTheme);
+    // 오로라에 할 일을 띄울지가 바뀌었을 수 있다
+    applyFull();
     if (!settings.scanRoots.equals(rootsBefore)) {
       scanFolders(settings);
       return;
@@ -1275,6 +1600,9 @@ public class Main extends Application {
     // 상대가 그대로면 파트너가 바뀌었을 수만 있다 — 먼저 말 걸지와 목록의 ♥ 만 새로 단다
     if (next == chatPane.profile()) {
       wirePartner(stage, chatPane, settings);
+      // 파트너 ♥ · 이름이 바뀌었을 수 있다
+      if (partnerFloat.isVisible())
+        partnerFloat.refresh(chatPane);
       return;
     }
     chatPane.retire();
@@ -1369,10 +1697,31 @@ public class Main extends Application {
     hiding = false;
   }
 
+  /** 창이 원래 크기 (WINDOW_WIDTH × WINDOW_HEIGHT) 그대로인지 — Win+화살표로 늘어났는지 볼 때 */
+  private static boolean normalSize(Stage stage) {
+    return Math.abs(stage.getWidth() - WINDOW_WIDTH) < 1 && Math.abs(stage.getHeight() - WINDOW_HEIGHT) < 1;
+  }
+
   private void reveal(Stage stage) {
+    boolean reopened = !stage.isShowing();
     stage.show();
+    if (reopened) {
+      SettingsDialog settings = SettingsDialog.load();
+      if (settings.hotkeyAurora()) {
+        // 단축키로 열 화면이 오로라면 열 때마다 오로라로 — 보던 화면이 딴 데였어도 기본 화면으로 돌아와 연다
+        aurora = true;
+        fullMode = false;
+        showHome();
+      } else if (aurora) {
+        // 오로라로 열다 설정을 바꿨으면 기본 위젯으로
+        leaveAurora();
+      } else if (!fullMode && settings.openFullScreen) {
+        // 설정(openFullScreen)이 켜져 있으면 숨겼던 창을 열 때마다 전체화면으로 — 떠 있는 동안 F11 로 꺼뒀어도
+        setFullMode(true);
+      }
+    }
     // 숨기면서 풀린 전체화면을 도로 켠다
-    if (fullMode && !stage.isFullScreen())
+    if ((fullMode || aurora) && !stage.isFullScreen())
       stage.setFullScreen(true);
     bringToFront(stage);
   }

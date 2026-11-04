@@ -62,6 +62,15 @@ public class ChatHistory {
      */
     @JsonInclude(JsonInclude.Include.NON_DEFAULT)
     public boolean cutIn;
+    /** 사진을 보낸 줄이면 그 파일 자리. text 는 ChatImage.TEXT 로 채워둔다 */
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    public String image;
+    /**
+     * 사진을 읽은 설명. 마도카한테는 사진 대신 이 글이 간다 (ChatImage.spoken).
+     * null 이면 아직 안 읽음, 빈 글이면 읽었는데 설명을 못 얻음 — NON_NULL 이어야 빈 글이 파일에 남는다
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public String caption;
 
     /** Jackson 이 쓰는 빈 생성자 */
     public Line() {

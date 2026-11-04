@@ -25,7 +25,7 @@ import java.nio.file.Path;
 /**
  * /patch 로 여는 패치 노트 창. 루트의 PATCHNOTES.md 를 그대로 읽어 MarkdownView 로 그린다 —
  * 노트를 고치면 다시 빌드 안 해도 다음에 열 때 바로 보인다.
- * 닫는 건 Enter / Esc / 버튼 아무거나 (Notice 와 같은 옷).
+ * 닫는 건 Enter / Esc / 버튼 아무거나 (Notice 와 같은 옷). 위젯이 전체화면이면 창을 크게 띄우고 버전마다 칸을 나눈다.
  */
 public final class PatchNotesDialog {
 
@@ -33,11 +33,13 @@ public final class PatchNotesDialog {
 
   private static final double WIDTH = 520;
   private static final double HEIGHT = 560;
+  private static final double FULL_WIDTH = 900;
+  private static final double FULL_HEIGHT = 820;
 
   private PatchNotesDialog() {
   }
 
-  public static void show(Window owner) {
+  public static void show(Window owner, boolean full) {
     Stage popup = new Stage();
     if (owner != null)
       popup.initOwner(owner);
@@ -48,6 +50,8 @@ public final class PatchNotesDialog {
     title.getStyleClass().add("notice-title");
 
     MarkdownView notes = new MarkdownView();
+    if (full)
+      notes.setSectionLevel(2); // 넓은 창에선 ## 버전마다 칸을 나눈다
     notes.setMarkdown(read());
     VBox.setVgrow(notes, Priority.ALWAYS);
 
@@ -62,7 +66,7 @@ public final class PatchNotesDialog {
     VBox root = new VBox(14, title, notes, buttonBox);
     root.getStyleClass().addAll("dialog-root", "notice-root");
     root.setPadding(new Insets(22));
-    root.setPrefSize(WIDTH, HEIGHT);
+    root.setPrefSize(full ? FULL_WIDTH : WIDTH, full ? FULL_HEIGHT : HEIGHT);
 
     Scene scene = new Scene(root);
     scene.setFill(Color.TRANSPARENT);

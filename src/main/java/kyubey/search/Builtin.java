@@ -47,7 +47,7 @@ public enum Builtin {
   PATCH("patch", "패치 노트");
 
   /** "/" 로 시작하게 쳤을 때 목록에 오르는 명령어들 (Resolver.matchSlash) */
-  public static final List<Builtin> SLASH = List.of(TOP, PATCH, KEYS, SETTINGS, RESTART);
+  public static final List<Builtin> SLASH = List.of(TOP, PATCH, TODO, KEYS, SETTINGS, RESTART);
 
   private final String keyword;
   private final String label;
