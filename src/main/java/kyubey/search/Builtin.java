@@ -46,10 +46,12 @@ public enum Builtin {
   // 루트의 PATCHNOTES.md 를 창에 띄운다. 이것도 슬래시로만
   PATCH("patch", "패치 노트"),
   // "채팅 프롬프트" 와 같은 창을 슬래시로 바로 여는 길
-  PROMPT("prompt", "채팅 상대 이름 · 시작 멘트 · 성격 고치기");
+  PROMPT("prompt", "채팅 상대 이름 · 시작 멘트 · 성격 고치기"),
+  // 지금 버전을 보고 새 버전을 바로 찾는다. 켤 때 자동으로 보는 것과 같은 길을 쓴다
+  UPDATE("update", "버전 확인 · 업데이트");
 
   /** "/" 로 시작하게 쳤을 때 목록에 오르는 명령어들 (Resolver.matchSlash) */
-  public static final List<Builtin> SLASH = List.of(TOP, PATCH, PROMPT, TODO, KEYS, SETTINGS, RESTART);
+  public static final List<Builtin> SLASH = List.of(TOP, PATCH, PROMPT, UPDATE, TODO, KEYS, SETTINGS, RESTART);
 
   private final String keyword;
   private final String label;
@@ -110,7 +112,7 @@ public enum Builtin {
 
   /** 슬래시로만 부르는 명령어 — 그냥 쳐선 목록에 안 오른다 */
   public boolean slashOnly() {
-    return this == TOP || this == PATCH || this == PROMPT;
+    return this == TOP || this == PATCH || this == PROMPT || this == UPDATE;
   }
 
   /** 슬래시 목록에 올릴 항목 하나. Tab 이면 "/top" 처럼 슬래시째 채운다 */

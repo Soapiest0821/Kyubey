@@ -29,13 +29,22 @@ public final class Notice {
 
   /** 경고 한 줄 띄우고, 닫을 때까지 기다린다 */
   public static void warn(Window owner, String message) {
+    show(owner, "🚨 잠깐!", message);
+  }
+
+  /** 경고가 아닌 알림 한 줄을 띄우고, 닫을 때까지 기다린다 */
+  public static void info(Window owner, String message) {
+    show(owner, "✨ 알려줄게", message);
+  }
+
+  private static void show(Window owner, String heading, String message) {
     Stage popup = new Stage();
     if (owner != null)
       popup.initOwner(owner);
     popup.initModality(Modality.APPLICATION_MODAL);
     popup.initStyle(StageStyle.TRANSPARENT);
 
-    Label title = new Label("🚨 잠깐!");
+    Label title = new Label(heading);
     title.getStyleClass().add("notice-title");
 
     Label body = new Label(message);

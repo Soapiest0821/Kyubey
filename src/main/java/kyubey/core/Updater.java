@@ -88,7 +88,7 @@ public final class Updater {
     }
     Thread worker = new Thread(() -> {
       try {
-        Release release = latest(fetchText(URI.create(RELEASES)), current);
+        Release release = fetchLatest(current);
         if (release != null)
           Platform.runLater(() -> offer(owner, current, release));
       } catch (InterruptedException e) {
@@ -99,6 +99,43 @@ public final class Updater {
     }, "update-check");
     worker.setDaemon(true);
     worker.start();
+  }
+
+  /** /update — 지금 버전을 알리고 새 버전을 바로 찾는다. 찾지 못한 이유도 화면에 보여준다 */
+  public static void checkNow(Window owner) {
+    String current = currentVersion();
+    if (!packaged()) {
+      Notice.info(owner, "지금 버전은 " + current + " 이야.\n업데이트는 설치한 앱에서만 돼.");
+      return;
+    }
+    Thread worker = new Thread(() -> {
+      try {
+        Release release = fetchLatest(current);
+        Platform.runLater(() -> {
+          if (release == null)
+            Notice.info(shown(owner), "지금 " + current + " 이 최신 버전이야.");
+          else
+            offer(owner, current, release);
+        });
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      } catch (IOException | RuntimeException e) {
+        System.err.println("[update] 새 버전 확인 실패: " + e);
+        Platform.runLater(() -> Notice.warn(shown(owner),
+            "새 버전을 확인하지 못했어. 지금 버전은 " + current + " 이야.\n" + e.getMessage()));
+      }
+    }, "update-check-now");
+    worker.setDaemon(true);
+    worker.start();
+  }
+
+  private static Release fetchLatest(String current) throws IOException, InterruptedException {
+    return latest(fetchText(URI.create(RELEASES)), current);
+  }
+
+  /** 숨겨진 창에 알림을 붙이면 안 보일 수 있어서, 떠 있는 창일 때만 주인으로 쓴다 */
+  private static Window shown(Window owner) {
+    return owner != null && owner.isShowing() ? owner : null;
   }
 
   private static void offer(Window owner, String current, Release release) {
@@ -247,8 +284,11 @@ public final class Updater {
 
   private static String fetchText(URI uri) throws IOException, InterruptedException {
     HttpResponse<String> response = HTTP.send(request(uri), HttpResponse.BodyHandlers.ofString());
-    if (response.statusCode() != 200)
-      throw new IOException("HTTP " + response.statusCode() + " " + uri);
+    int status = response.statusCode();
+    if (status == 403 || status == 429)
+      throw new IOException("GitHub 호출 제한에 걸렸어. 조금 뒤에 다시 해줘.");
+    if (status != 200)
+      throw new IOException("서버가 " + status + " 으로 답했어.");
     return response.body();
   }
 

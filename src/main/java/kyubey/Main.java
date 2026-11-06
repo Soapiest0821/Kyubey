@@ -1499,6 +1499,7 @@ public class Main extends Application {
       case RESTART -> restart();
       case TOP -> showTop(stage);
       case PATCH -> PatchNotesDialog.show(stage, fullMode);
+      case UPDATE -> Updater.checkNow(stage);
       // 못 찾아서 내려온 "새로 등록하기" 면 찾던 그 글자를 키워드 칸에 담아 보낸다
       case NEW -> AppRegisterDialog.show(stage, macro, arg);
       // 단축키(Win+Alt+Z)와 같은 판. 위젯은 뜬 채로 남아서 화면에 같이 찍힌다 —
