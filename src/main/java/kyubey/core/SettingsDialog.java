@@ -941,7 +941,7 @@ public final class SettingsDialog {
     auroraTodos.getStyleClass().add("dialog-path-label");
     auroraTodos.setSelected(settings.auroraTodos);
 
-    HBox openTitle = section("단축키로 여는 화면 (Win+Alt+Space)", () -> {
+    HBox openTitle = section("단축키로 여는 화면 (" + kyubey.win.GlobalHotkey.openName() + ")", () -> {
       openWidget.setSelected(true);
       auroraTodos.setSelected(true);
     });

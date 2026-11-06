@@ -6,6 +6,10 @@ import com.sun.jna.platform.win32.WinUser;
 import com.sun.jna.win32.StdCallLibrary;
 import com.sun.jna.win32.W32APIOptions;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -33,6 +37,38 @@ public final class GlobalHotkey {
   public static final int VK_SPACE = 0x20;
   /** 화면 자르기 (Win+Alt+Z) */
   public static final int VK_Z = 0x5A;
+
+  /** 위젯 단축키를 이 PC 에서만 바꾸는 파일. A~Y, 0~9 중 한 글자를 적는다. 없으면 Space */
+  private static final String OPEN_KEY_FILE = kyubey.core.AppPaths.ROOT + "hotkey.txt";
+
+  /** 이 PC 의 위젯 단축키 글자. 바꾼 적이 없거나 쓸 수 없는 값이면 null */
+  private static Character customOpenKey() {
+    Path file = Path.of(OPEN_KEY_FILE);
+    if (!Files.isRegularFile(file))
+      return null;
+    try {
+      String key = Files.readString(file, StandardCharsets.UTF_8).strip().toUpperCase(java.util.Locale.ROOT);
+      // Z 는 화면 자르기가 쓰고 있다
+      if (key.matches("[A-Y0-9]"))
+        return key.charAt(0);
+      System.err.println("[hotkey] hotkey.txt 값을 쓸 수 없어서 Space 로 둘게: " + key);
+    } catch (IOException e) {
+      System.err.println("[hotkey] hotkey.txt 를 못 읽었어: " + e.getMessage());
+    }
+    return null;
+  }
+
+  /** 위젯 단축키의 가상 키 코드. 영문 대문자와 숫자는 글자 코드가 곧 가상 키 코드다 */
+  public static int openVk() {
+    Character key = customOpenKey();
+    return key == null ? VK_SPACE : key;
+  }
+
+  /** 위젯 단축키 이름 */
+  public static String openName() {
+    Character key = customOpenKey();
+    return "Win+Alt+" + (key == null ? "Space" : key.toString());
+  }
 
   private static final int WM_HOTKEY = 0x0312;
 

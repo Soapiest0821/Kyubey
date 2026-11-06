@@ -24,4 +24,5 @@ git push origin makeit makeit-v1.0.1
 - `packaging/build.ps1` 의 `--win-upgrade-uuid` 는 절대 바꾸지 않는다.
 - 사용자 데이터는 `%APPDATA%\Makeit` 에 둔다. `main` 에서 `src/main/resources/json/` 경로가
   새로 들어오면 merge 때 `AppPaths.JSON` 으로 바꾼다.
+- 이 PC 의 위젯 단축키만 바꾸려면 `%APPDATA%\Makeit\hotkey.txt` 에 A~Y, 0~9 중 한 글자를 적는다.
 - 시험 실행은 `.\packaging\build.ps1 -Type app-image` 뒤 `target\dist\Makeit\Makeit.exe`.

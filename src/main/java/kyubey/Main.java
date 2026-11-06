@@ -809,17 +809,18 @@ public class Main extends Application {
     Platform.setImplicitExit(false);
 
     // 전역 단축키는 한 번에 몰아서 건다 (GlobalHotkey 주석 참고 — 등록한 스레드로만 신호가 온다)
+    String openHotkey = GlobalHotkey.openName();
     List<String> missed = GlobalHotkey.register(
-        new GlobalHotkey.Hotkey(GlobalHotkey.VK_SPACE, "Win+Alt+Space",
+        new GlobalHotkey.Hotkey(GlobalHotkey.openVk(), openHotkey,
             () -> Platform.runLater(() -> toggle(stage))),
         // 캡쳐는 위젯 창과 상관없이 혼자 돈다 — 위젯이 떠 있든 숨어 있든 손대지 않는다
         new GlobalHotkey.Hotkey(GlobalHotkey.VK_Z, "Win+Alt+Z",
             () -> Platform.runLater(() -> Capture.start(llm))));
 
-    hotkeyReady = !missed.contains("Win+Alt+Space");
+    hotkeyReady = !missed.contains(openHotkey);
     if (!hotkeyReady) {
       // 못 걸었으면 숨겼다가 못 부르는 신세가 되니까, Esc 는 예전처럼 끄기로 남겨둔다.
-      System.err.println("[hotkey] Win+Alt+Space 를 못 잡았어 (다른 프로그램이 먼저 쓰는 듯). "
+      System.err.println("[hotkey] " + openHotkey + " 를 못 잡았어 (다른 프로그램이 먼저 쓰는 듯). "
           + "Esc 는 숨기기 대신 종료로 둘게.");
     }
     if (missed.contains("Win+Alt+Z")) {
