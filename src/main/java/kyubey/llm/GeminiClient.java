@@ -26,11 +26,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Gemini API 무료 티어용 클라이언트.
+ * Gemini API 클라이언트. Google 에 바로 보내거나 BAZE 게이트웨이를 거친다 (Provider).
  *
- * 키는 프로젝트 루트의 .env 에서 읽는다: WIZ_1, WIZ_2 … 를 번호순으로 모아서 돌려 쓴다.
- * WIZ_ 로 시작하는 이름만 본다 — 다른 이름으로 적어두면 없는 것과 똑같다.
- * 키 발급: https://aistudio.google.com/apikey
+ * 키는 프로젝트 루트의 .env 에서 읽는다: Google 은 WIZ_1, WIZ_2 …, BAZE 는 BAZE_1, BAZE_2 … 를
+ * 번호순으로 모아서 돌려 쓴다. 다른 이름으로 적어두면 없는 것과 똑같다.
+ * 어느 쪽을 쓸지는 keys 창에서 고르고, .env 의 GEMINI_PROVIDER 에 적힌다 (없으면 Google).
+ * 두 쪽 다 Gemini 네이티브 형식이라 주소와 키만 다르다.
  *
  * 모델은 .env 의 GEMINI_MODEL 로 덮어쓸 수 있다 (모델 이름 바뀌어도 재빌드 안 해도 되게).
  * 빠른 답변 모드는 GEMINI_FAST_MODEL 을 적어두면 그 모델로, 안 적어두면 같은 모델에
@@ -39,7 +40,64 @@ import java.util.regex.Pattern;
 public class GeminiClient implements LlmClient {
 
   private static final String DEFAULT_MODEL = "gemini-3.8-flash";
-  private static final String ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
+  /** .env 에서 어느 쪽 키를 쓸지 적어두는 이름 */
+  private static final String PROVIDER_NAME = "GEMINI_PROVIDER";
+
+  /** 키를 어디로 보낼지. 키 이름표 · 주소 · 안내가 쪽마다 다르다 */
+  public enum Provider {
+    GOOGLE("Google", "WIZ", "https://generativelanguage.googleapis.com",
+        "https://aistudio.google.com/api-keys?hl=ko", "aistudio.google.com/api-keys", "Google 키 붙여넣기"),
+    BAZE("BAZE", "BAZE", "https://factchat-cloud.mindlogic.ai/v1/gateway/gemini",
+        "https://docs.mindlogic.ai/docs/general/api-gateway/getting-started/authentication",
+        "docs.mindlogic.ai · 키 안내", "BAZE 키 붙여넣기");
+
+    private final String label;
+    private final String prefix;
+    private final String baseUrl;
+    private final String keyPage;
+    private final String keyPageLabel;
+    private final String keyHint;
+    private final Pattern keyName;
+
+    Provider(String label, String prefix, String baseUrl, String keyPage, String keyPageLabel, String keyHint) {
+      this.label = label;
+      this.prefix = prefix;
+      this.baseUrl = baseUrl;
+      this.keyPage = keyPage;
+      this.keyPageLabel = keyPageLabel;
+      this.keyHint = keyHint;
+      this.keyName = Pattern.compile(prefix + "_(\\d{1,5})");
+    }
+
+    /** 화면에 쓸 이름 */
+    public String label() {
+      return label;
+    }
+
+    /** .env 에 적히는 키 이름의 앞머리 (WIZ, BAZE) */
+    public String prefix() {
+      return prefix;
+    }
+
+    /** 키를 발급하거나 살펴보는 곳 */
+    public String keyPage() {
+      return keyPage;
+    }
+
+    public String keyPageLabel() {
+      return keyPageLabel;
+    }
+
+    /** 빈 키 칸에 깔아둘 글 */
+    public String keyHint() {
+      return keyHint;
+    }
+
+    private static Provider of(Map<String, String> env) {
+      return BAZE.name().equalsIgnoreCase(firstNonBlank(env.get(PROVIDER_NAME))) ? BAZE : GOOGLE;
+    }
+  }
+
 
   /** 위젯에서 쓰는 거라 답이 너무 길면 곤란해서 짧게 달라고 미리 깔아둠 */
   private static final String SYSTEM_HINT = """
@@ -49,11 +107,6 @@ public class GeminiClient implements LlmClient {
       답은 마크다운으로 써도 돼 — 제목, 목록, 굵게, 코드 블록 다 그려진다.
       어디서 본 문장을 그대로 옮기지 말고 항상 네 말로 새로 써.
       """;
-
-  /** 빠른 모드일 때 시스템 프롬프트에 덧붙이는 문구 */
-  private static final String FAST_HINT = """
-
-      지금은 빠른 답변 모드야. 길게 따져보지 말고 결론부터 짧게 줘.""";
 
   /** 앞 대화에 나온 주소 — 링크 읽는 차례에 통째로 지워서 넘긴다 */
   private static final Pattern URL = Pattern.compile("https?://\\S+");
@@ -67,7 +120,7 @@ public class GeminiClient implements LlmClient {
   private static final String RECITATION_HELP = """
       답이 막혔어 (finishReason=RECITATION)
 
-      구글이 "이 답은 학습 데이터를 그대로 읊는 것 같다"고 판단하면
+      Gemini 가 "이 답은 학습 데이터를 그대로 읊는 것 같다"고 판단하면
       내용을 통째로 지우고 빈 응답만 보낸다. 우리 코드 문제가 아니라 서버쪽 필터라
       표현을 바꿔서 한 번 더 물어봤는데도 똑같이 막혔어.
 
@@ -75,15 +128,6 @@ public class GeminiClient implements LlmClient {
         - 유명한 코드/문서/가사를 "그대로" 달라는 요청은 피하기
         - "요약해서", "네 말로 다시 써서" 처럼 바꿔 쓰라고 하기
         - 내 상황(파일명, 에러 메시지 등)을 섞어서 더 구체적으로 묻기""";
-
-  /**
-   * 키가 전부 막혔을 때 메시지 끝에 붙이는 안내.
-   * 이 메시지는 MarkdownView 로 그려져서 [글자](주소) 가 클릭되는 링크로 나온다.
-   */
-  private static final String KEY_PAGE_HELP = """
-
-
-      키 상태 확인하거나 새로 발급: [aistudio.google.com/api-keys](https://aistudio.google.com/api-keys?hl=ko)""";
 
   /**
    * 화면에서 자른 그림의 글자를 읽어달라고 할 때 쓰는 말.
@@ -109,11 +153,10 @@ public class GeminiClient implements LlmClient {
   /** 설명 길이 상한. 말이 끊겨도 앞부분은 쓸 수 있다 */
   private static final int DESCRIBE_MAX_TOKENS = 256;
 
-  /** .env 에서 키를 긁어올 때 쓰는 이름 패턴 (WIZ_1, WIZ_2 …) */
-  private static final Pattern WIZ_KEY = Pattern.compile("WIZ_(\\d{1,5})");
-
   /** keys 창에서 저장하면 reload() 가 통째로 갈아 끼운다 */
   private volatile List<ApiKey> apiKeys;
+  /** 지금 고른 쪽. keys 창에서 바꾸면 reload() 가 키와 같이 갈아 끼운다 */
+  private volatile Provider provider;
   /** 요청마다 한 칸씩 밀어서 한 키에 몰리지 않게 한다 */
   private final AtomicInteger cursor = new AtomicInteger();
   private final String normalModel;
@@ -125,31 +168,50 @@ public class GeminiClient implements LlmClient {
 
   public GeminiClient() {
     Map<String, String> env = Env.all();
-    this.apiKeys = loadKeys(env);
+    this.provider = Provider.of(env);
+    this.apiKeys = loadKeys(env, this.provider);
     this.normalModel = firstNonBlank(env.get("GEMINI_MODEL"), DEFAULT_MODEL);
     // 빠른 모드용 모델을 따로 안 적어놨으면 같은 모델로 두고 생각만 줄인다
     this.fastModel = firstNonBlank(env.get("GEMINI_FAST_MODEL"), this.normalModel);
   }
 
-  /** .env 를 새로 읽어서 키를 갈아 끼운다 — keys 창에서 저장한 게 다음 질문부터 먹게 */
+  /** .env 를 새로 읽어서 고른 쪽과 키를 갈아 끼운다 — keys 창에서 저장한 게 다음 질문부터 먹게 */
   @Override
   public void reload() {
-    apiKeys = loadKeys(Env.all());
+    Map<String, String> env = Env.all();
+    Provider picked = Provider.of(env);
+    provider = picked;
+    apiKeys = loadKeys(env, picked);
   }
 
-  /** 지금 .env 에 적힌 키 값들, 번호순. keys 창이 여기서 채운다 */
+  /** 지금 고른 쪽 */
+  public static Provider currentProvider() {
+    return Provider.of(Env.all());
+  }
+
+  /** 고른 쪽을 .env 에 적는다 */
+  public static void writeProvider(Provider picked) throws IOException {
+    Env.rewrite(PROVIDER_NAME::equals, Map.of(PROVIDER_NAME, picked.name().toLowerCase()));
+  }
+
+  /** 지금 고른 쪽 키 값들, 번호순 */
   public static List<String> readKeys() {
+    return readKeys(currentProvider());
+  }
+
+  /** 이 쪽 키 값들, 번호순. keys 창이 여기서 채운다 */
+  public static List<String> readKeys(Provider provider) {
     List<String> values = new ArrayList<>();
-    for (ApiKey key : loadKeys(Env.all()))
+    for (ApiKey key : loadKeys(Env.all(), provider))
       values.add(key.value());
     return values;
   }
 
   /**
-   * 키 목록을 .env 에 WIZ_1 부터 번호를 새로 매겨 적는다. 원래 있던 WIZ_ 줄은 다 걷어낸다.
+   * 이 쪽 키 목록을 .env 에 1번부터 번호를 새로 매겨 적는다. 원래 있던 이 쪽 줄은 다 걷어낸다.
    * 빈칸·겹치는 키는 뺀다. 다른 설정 줄은 안 건드린다 (Env.rewrite).
    */
-  public static void writeKeys(List<String> values) throws IOException {
+  public static void writeKeys(Provider provider, List<String> values) throws IOException {
     LinkedHashSet<String> unique = new LinkedHashSet<>();
     for (String value : values) {
       String v = firstNonBlank(value);
@@ -159,18 +221,18 @@ public class GeminiClient implements LlmClient {
     Map<String, String> entries = new LinkedHashMap<>();
     int n = 1;
     for (String value : unique)
-      entries.put("WIZ_" + n++, value);
-    Env.rewrite(name -> WIZ_KEY.matcher(name).matches(), entries);
+      entries.put(provider.prefix() + "_" + n++, value);
+    Env.rewrite(name -> provider.keyName.matcher(name).matches(), entries);
   }
 
   /**
-   * .env 의 WIZ_1, WIZ_2 … 를 번호순으로 모은다. 읽는 건 이 이름뿐이다.
+   * .env 에서 이 쪽 이름표(WIZ_1, BAZE_1 …)가 붙은 키를 번호순으로 모은다. 읽는 건 이 이름뿐이다.
    * 번호가 비어 있어도(WIZ_1, WIZ_3 만 있어도) 있는 것만 순서대로 쓴다.
    */
-  private static List<ApiKey> loadKeys(Map<String, String> env) {
+  private static List<ApiKey> loadKeys(Map<String, String> env, Provider provider) {
     List<Map.Entry<Integer, String>> numbered = new ArrayList<>();
     for (Map.Entry<String, String> entry : env.entrySet()) {
-      Matcher m = WIZ_KEY.matcher(entry.getKey());
+      Matcher m = provider.keyName.matcher(entry.getKey());
       String value = firstNonBlank(entry.getValue());
       if (m.matches() && value != null)
         numbered.add(Map.entry(Integer.parseInt(m.group(1)), value));
@@ -179,13 +241,13 @@ public class GeminiClient implements LlmClient {
 
     List<ApiKey> keys = new ArrayList<>();
     for (Map.Entry<Integer, String> entry : numbered)
-      keys.add(new ApiKey("WIZ_" + entry.getKey(), entry.getValue()));
+      keys.add(new ApiKey(provider.prefix() + "_" + entry.getKey(), entry.getValue(), provider));
 
     return List.copyOf(keys);
   }
 
-  /** 키 하나 — 실패했을 때 어느 키였는지 말해주려고 .env 이름을 같이 들고 다닌다 */
-  private record ApiKey(String label, String value) {
+  /** 키 하나 — 실패했을 때 어느 키였는지 말해주려고 .env 이름을, 어디로 보낼지 알려고 쪽을 같이 들고 다닌다 */
+  private record ApiKey(String label, String value, Provider provider) {
   }
 
   /** 키 하나에 던져본 결과 한 줄 (WIZ_3 → 한도 초과) */
@@ -211,16 +273,14 @@ public class GeminiClient implements LlmClient {
 
   @Override
   public String unavailableReason() {
-    return """
-        .env 에 쓸 수 있는 키가 하나도 없어!
+    Provider picked = provider;
+    return String.format("""
+        %1$s 키가 하나도 없어!
 
-        1. https://aistudio.google.com/apikey 에서 무료 키 발급
-        2. 프로젝트 루트(.env 파일)에 번호 붙여서 적기 (여러 개면 돌려 쓴다):
-             WIZ_1=발급받은키
-             WIZ_2=두번째키
-        3. 또는 위젯에서 keys 를 쳐서 바로 넣기
-
-        (WIZ_ 이름만 읽는다 — GEMINI_API_KEY 같은 건 안 본다)""";
+        1. %2$s 에서 키 발급
+        2. 위젯에서 keys 를 쳐서 넣기
+           (또는 .env 에 %3$s_1=발급받은키 — 여러 개면 번호를 늘려 적고 돌려 쓴다)""",
+        picked.label(), picked.keyPage(), picked.prefix());
   }
 
   @Override
@@ -365,7 +425,7 @@ public class GeminiClient implements LlmClient {
   private String send(String system, List<Message> turns, boolean rephrase, Mode mode, boolean urlContext)
       throws IOException, InterruptedException {
     boolean lowThinking = mode == Mode.FAST;
-    Sent sent = post(buildBody(system, turns, rephrase, mode, lowThinking, urlContext), mode);
+    Sent sent = post(buildBody(system, turns, rephrase, lowThinking, urlContext), mode);
 
     // 키를 다 돌았는데 응답을 한 번도 못 받은 경우 (전부 연결 실패/타임아웃)
     if (sent.response() == null)
@@ -374,7 +434,7 @@ public class GeminiClient implements LlmClient {
     // thinkingConfig 를 모르는 모델이면 400 이 온다. 그럼 그것만 빼고 한 번 더.
     if (lowThinking && sent.response().statusCode() == 400 && sent.response().body().contains("thinking")) {
       lowThinking = false;
-      sent = post(buildBody(system, turns, rephrase, mode, false, urlContext), mode);
+      sent = post(buildBody(system, turns, rephrase, false, urlContext), mode);
       if (sent.response() == null)
         throw failed(sent, mode);
     }
@@ -382,7 +442,7 @@ public class GeminiClient implements LlmClient {
     // url_context 툴을 모르는 모델이어도 400 이 온다. 링크만 못 읽을 뿐이니 툴을 빼고 한 번 더.
     if (urlContext && sent.response().statusCode() == 400
         && (sent.response().body().contains("url_context") || sent.response().body().contains("tool"))) {
-      sent = post(buildBody(system, turns, rephrase, mode, lowThinking, false), mode);
+      sent = post(buildBody(system, turns, rephrase, lowThinking, false), mode);
       if (sent.response() == null)
         throw failed(sent, mode);
     }
@@ -412,7 +472,7 @@ public class GeminiClient implements LlmClient {
     for (int i = 0; i < apiKeys.size(); i++) {
       ApiKey key = apiKeys.get((start + i) % apiKeys.size());
       HttpRequest request = HttpRequest.newBuilder()
-          .uri(URI.create(String.format(ENDPOINT, modelName(mode))))
+          .uri(URI.create(key.provider().baseUrl + "/v1beta/models/" + modelName(mode) + ":generateContent"))
           .header("Content-Type", "application/json")
           .header("x-goog-api-key", key.value())
           .timeout(Duration.ofSeconds(60))
@@ -448,9 +508,9 @@ public class GeminiClient implements LlmClient {
   /** 이 응답이 "키 문제" 라서 다음 키로 넘어가면 될 것인지 */
   private static boolean shouldTryNextKey(HttpResponse<String> response) {
     int code = response.statusCode();
-    if (code == 429 || code == 401) // 한도 초과 / 키가 아예 안 먹힘
+    if (code == 429 || code == 401 || code == 402) // 한도 초과 / 키가 아예 안 먹힘 / 크레딧 부족
       return true;
-    if (code >= 500) // 구글 쪽 일시적 오류 — 다른 키로 바로 한 번 더 찔러본다
+    if (code >= 500) // 서버 쪽 일시적 오류 — 다른 키로 바로 한 번 더 찔러본다
       return true;
     if (code != 400 && code != 403)
       return false;
@@ -464,7 +524,7 @@ public class GeminiClient implements LlmClient {
 
   /**
    * 실패한 응답을 한글 키워드로 바꾼다.
-   * 구글이 주는 상태 문자열이 HTTP 코드보다 정확해서 본문을 먼저 본다.
+   * 서버가 주는 상태 문자열이 HTTP 코드보다 정확해서 본문을 먼저 본다.
    */
   private static String reason(HttpResponse<String> response) {
     String body = response.body() == null ? "" : response.body();
@@ -474,6 +534,8 @@ public class GeminiClient implements LlmClient {
       return "키 무효";
     if (code == 401 || body.contains("UNAUTHENTICATED"))
       return "인증 실패";
+    if (code == 402)
+      return "크레딧 부족";
     if (code == 429 || body.contains("RESOURCE_EXHAUSTED"))
       return "한도 초과";
     if (code == 403 || body.contains("PERMISSION_DENIED"))
@@ -493,17 +555,19 @@ public class GeminiClient implements LlmClient {
   }
 
   /** 키워드마다 붙여줄 한 줄 설명 — 모르는 키워드면 null */
-  private static String help(String reason) {
+  private static String help(String reason, Provider provider) {
+    String name = provider.label();
     return switch (reason) {
-      case "인증 실패" -> "키를 안 보고 OAuth 토큰/로그인 쿠키를 달라고 하는 상태야. 키 값에 따옴표·공백이 섞였는지, 만료된 키인지 확인해봐.";
-      case "키 무효" -> "키 문자열 자체가 틀렸어. AI Studio 에서 다시 복사해서 .env 에 넣어.";
-      case "한도 초과" -> "무료 티어 분당/일일 한도야. 조금 기다리거나 .env 에 키를 더 추가해.";
-      case "권한 없음" -> "키는 살아있는데 이 모델/API 를 쓸 권한이 없어. 키가 붙은 구글 프로젝트를 확인해봐.";
+      case "인증 실패" -> "키를 못 알아봤어. 키 값에 따옴표·공백이 섞였는지, 만료됐거나 " + name + " 키가 맞는지 확인해봐.";
+      case "키 무효" -> "키 문자열 자체가 틀렸어. " + name + " 에서 다시 복사해서 넣어.";
+      case "한도 초과" -> "분당/일일 한도야. 조금 기다리거나 keys 창에서 키를 더 넣어.";
+      case "크레딧 부족" -> name + " 크레딧이 모자라. 잔액을 확인하거나 keys 창에서 다른 쪽 키로 바꿔봐.";
+      case "권한 없음" -> "키는 살아있는데 이 모델/API 를 쓸 권한이 없어. " + name + " 쪽 권한을 확인해봐.";
       case "모델 없음" -> "모델 이름이 틀렸거나 이 키로는 못 보는 모델이야. .env 의 GEMINI_MODEL 을 고쳐봐.";
-      case "서버 오류" -> "구글 쪽 문제야. 잠깐 뒤에 다시 물어봐.";
-      case "요청 거부" -> "요청 형식을 구글이 거절했어. 모델 이름이나 프롬프트 길이를 의심해봐.";
+      case "서버 오류" -> name + " 쪽 문제야. 잠깐 뒤에 다시 물어봐.";
+      case "요청 거부" -> "요청을 " + name + " 이 거절했어. 모델 이름이나 프롬프트 길이를 의심해봐.";
       case "응답 없음" -> "60초 안에 답이 안 와서 접었어. 질문이 길면 짧게 잘라서 다시 물어봐.";
-      case "연결 실패" -> "구글까지 연결이 안 됐어. 인터넷/프록시/방화벽을 확인해봐.";
+      case "연결 실패" -> name + " 까지 연결이 안 됐어. 인터넷/프록시/방화벽을 확인해봐.";
       default -> null;
     };
   }
@@ -511,6 +575,7 @@ public class GeminiClient implements LlmClient {
   /** 키를 다 돌려봐도 안 됐을 때 화면에 그대로 띄울 메시지 (raw 응답 대신 키 번호 + 한글 키워드) */
   private IOException failed(Sent sent, Mode mode) {
     List<Attempt> attempts = sent.attempts();
+    Provider picked = provider;
     StringBuilder sb = new StringBuilder();
     sb.append("키 ").append(attempts.size()).append("개 시도했는데 다 막혔어 (모델 ")
         .append(modelName(mode)).append(")\n");
@@ -523,11 +588,13 @@ public class GeminiClient implements LlmClient {
       if (seen.contains(attempt.reason()))
         continue;
       seen.add(attempt.reason());
-      String help = help(attempt.reason());
+      String help = help(attempt.reason(), picked);
       if (help != null)
         sb.append("\n\n").append(attempt.reason()).append(": ").append(help);
     }
-    sb.append(KEY_PAGE_HELP);
+    // 이 메시지는 MarkdownView 로 그려져서 [글자](주소) 가 클릭되는 링크로 나온다
+    sb.append("\n\n키 상태 확인하거나 새로 발급: [").append(picked.keyPageLabel()).append("](")
+        .append(picked.keyPage()).append(")");
     return new IOException(sb.toString());
   }
 
@@ -562,7 +629,7 @@ public class GeminiClient implements LlmClient {
     return false;
   }
 
-  private String buildBody(String system, List<Message> turns, boolean rephrase, Mode mode, boolean lowThinking,
+  private String buildBody(String system, List<Message> turns, boolean rephrase, boolean lowThinking,
       boolean urlContext) throws IOException {
     ObjectNode root = mapper.createObjectNode();
 
@@ -591,7 +658,7 @@ public class GeminiClient implements LlmClient {
 
     root.putObject("systemInstruction")
         .putArray("parts").addObject()
-        .put("text", mode == Mode.FAST ? system + FAST_HINT : system);
+        .put("text", system);
 
     // 대화에 나온 링크를 모델이 직접 열어 읽게 한다 (페이지 내용을 가져다 답에 쓴다)
     if (urlContext)

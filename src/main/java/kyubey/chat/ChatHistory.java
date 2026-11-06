@@ -71,6 +71,9 @@ public class ChatHistory {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public String caption;
+    /** 상대가 웹에서 찾아 보낸 사진이면 찾을 때 쓴 조건 — "사진 다시 가져오기" 가 쓴다 (WebPicture.refetch) */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public String pictureSearch;
 
     /** Jackson 이 쓰는 빈 생성자 */
     public Line() {

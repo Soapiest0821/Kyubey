@@ -21,10 +21,10 @@ import java.util.Map;
  */
 public enum ChatProfile {
 
-  MADOKA("pink", "마도카"),
-  MAMI("yellow", "마미"),
-  SAYAKA("sky", "사야카"),
-  HOMURA("gray", "호무라");
+  MADOKA("pink", "마도카", "#ff69a0"),
+  MAMI("yellow", "마미", "#f5b82e"),
+  SAYAKA("sky", "사야카", "#4a90d9"),
+  HOMURA("gray", "호무라", "#7b5ea7");
 
   /** 아직 파트너를 안 골랐을 때 얘기하는 상대 — 회색 테마 */
   public static final ChatProfile DEFAULT = HOMURA;
@@ -35,10 +35,13 @@ public enum ChatProfile {
   public final String id;
   /** 이름을 따로 안 정했을 때 쓰는 이름 */
   public final String defaultName;
+  /** 프로필 카드 위 띠 색. 위젯 테마와 상관없이 늘 이 색이다 */
+  public final String banner;
 
-  ChatProfile(String id, String defaultName) {
+  ChatProfile(String id, String defaultName, String banner) {
     this.id = id;
     this.defaultName = defaultName;
+    this.banner = banner;
   }
 
   /** 모르는 이름이나 null 이면 null */

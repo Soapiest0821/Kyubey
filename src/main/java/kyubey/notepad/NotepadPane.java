@@ -347,6 +347,11 @@ public class NotepadPane extends HBox {
       e.consume();
       startNew();
     }
+    // TextArea 는 Enter 만 줄바꿈으로 받고 Shift+Enter 는 버린다
+    if (code == KeyCode.ENTER && e.isShiftDown()) {
+      e.consume();
+      editor.replaceSelection("\n");
+    }
   }
 
   private void listKey(KeyEvent e) {

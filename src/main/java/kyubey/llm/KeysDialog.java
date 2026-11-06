@@ -11,10 +11,13 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -28,27 +31,31 @@ import javafx.stage.Window;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
+import kyubey.llm.GeminiClient.Provider;
 import kyubey.ui.Emoji;
 import kyubey.ui.MarkdownView;
 import kyubey.ui.WindowDrag;
 
 /**
- * "keys" 로 뜨는 창 — .env 의 WIZ_ 키를 넣고 빼고 고친다.
+ * "keys" 로 뜨는 창 — .env 의 Google(WIZ_) · BAZE(BAZE_) 키를 넣고 빼고 고치고, 어느 쪽을 쓸지 고른다.
+ *
+ * 위의 단추로 고른 쪽 키가 보이고, 저장할 때 고른 쪽이 그대로 쓸 쪽이 된다. 두 쪽 키는 다 남는다.
  *
  * 줄마다 그 키로 마지막에 던져본 결과가 불로 붙는다 (KeyHealth):
  * 🟢 성공 · 🟡 서버 오류 · 🔴 한도 초과 · ⚫ 못 쓰는 키 · ⚪ 아직 안 써봄.
  * 불은 키 값에 붙어 있어서, 칸을 고치면 그 자리에서 새 키의 불로 바뀐다.
  * 키 값은 칸을 눌러 들어가기 전까진 안 보이게 둔다 — 화면 공유나 어깨 너머로 새지 않게.
  *
- * 저장하면 WIZ_1 부터 번호를 새로 매겨 .env 에 적고 (빈칸·겹치는 키는 빠진다),
+ * 저장하면 쪽마다 1번부터 번호를 새로 매겨 .env 에 적고 (빈칸·겹치는 키는 빠진다),
  * 클라이언트가 곧장 새로 읽는다. 딴 설정 줄은 그대로 둔다.
  * Ctrl+Enter 저장 · Esc 취소 — PromptDialog 와 같은 손버릇.
  * 위젯이 전체화면이면 창을 넓히고 키 줄도 더 많이 보이게 띄운다.
  */
 public final class KeysDialog {
 
-  private static final String KEY_PAGE = "https://aistudio.google.com/api-keys?hl=ko";
   /** 가림막이 덮여 있는 칸 — 밑에 깔린 진짜 글자는 투명하게 */
   private static final PseudoClass MASKED = PseudoClass.getPseudoClass("masked");
   /** 제목 · 키 줄 불 · 범례 불과 링크 그림 크기 */
@@ -76,7 +83,8 @@ public final class KeysDialog {
 
     // 불 범례도 그림으로 (Emoji) — 글자로 두면 윈도우에선 흑백 윤곽만 나온다
     FlowPane legend = new FlowPane(6, 2);
-    legend.getChildren().add(hint("위에서부터 WIZ_1, WIZ_2 … 로 .env 에 적혀."));
+    Label order = hint("");
+    legend.getChildren().add(order);
     String[][] lights = { { "🟢", "성공" }, { "🟡", "서버 오류" }, { "🔴", "한도 초과" }, { "⚫", "못 씀" }, { "⚪", "안 써봄" } };
     for (String[] l : lights) {
       Label item = hint(l[1]);
@@ -85,23 +93,65 @@ public final class KeysDialog {
     }
     VBox sub = new VBox(2, legend, hint("Ctrl+Enter 저장 · Esc 취소"));
 
-    VBox rows = new VBox(6);
-    List<String> current = GeminiClient.readKeys();
-    for (String key : current)
-      addRow(rows, key);
-    if (current.isEmpty())
-      addRow(rows, "");
+    Map<Provider, VBox> rowsOf = new EnumMap<>(Provider.class);
+    int mostKeys = 0;
+    for (Provider provider : Provider.values()) {
+      VBox rows = new VBox(6);
+      List<String> current = GeminiClient.readKeys(provider);
+      for (String key : current)
+        addRow(rows, provider, key);
+      if (current.isEmpty())
+        addRow(rows, provider, "");
+      rowsOf.put(provider, rows);
+      mostKeys = Math.max(mostKeys, current.size());
+    }
 
-    ScrollPane scroll = new ScrollPane(rows);
+    ScrollPane scroll = new ScrollPane();
     scroll.getStyleClass().add("keys-scroll");
     scroll.setFitToWidth(true);
     scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-    scroll.setPrefViewportHeight(Math.min(full ? FULL_VISIBLE_ROWS : VISIBLE_ROWS, Math.max(3, current.size())) * 44);
+    scroll.setPrefViewportHeight(Math.min(full ? FULL_VISIBLE_ROWS : VISIBLE_ROWS, Math.max(3, mostKeys)) * 44);
+
+    // 왼쪽 아래 — 키 발급/상태 보는 곳. 고른 쪽 따라 바뀐다
+    Label link = new Label();
+    link.setGraphic(Emoji.view("🔗", LEGEND_SIZE));
+    link.getStyleClass().add("keys-link");
+    link.setCursor(Cursor.HAND);
+
+    Provider[] picked = { GeminiClient.currentProvider() };
+    Runnable showPicked = () -> {
+      Provider provider = picked[0];
+      scroll.setContent(rowsOf.get(provider));
+      scroll.setVvalue(0);
+      order.setText("위에서부터 " + provider.prefix() + "_1, " + provider.prefix() + "_2 … 로 .env 에 적혀.");
+      link.setText(provider.keyPageLabel());
+      link.setOnMouseClicked(e -> MarkdownView.openInBrowser(provider.keyPage()));
+    };
+    showPicked.run();
+
+    // 고른 걸 다시 눌러도 꺼지지 않는 알약 단추 — 설정 창의 고르기 단추와 같은 생김새
+    ToggleGroup group = new ToggleGroup();
+    HBox picker = new HBox(6);
+    for (Provider provider : Provider.values()) {
+      ToggleButton button = new ToggleButton(provider.label());
+      button.getStyleClass().add("llm-mode");
+      button.setToggleGroup(group);
+      button.setSelected(provider == picked[0]);
+      button.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
+        if (button.isSelected())
+          e.consume();
+      });
+      button.setOnAction(e -> {
+        picked[0] = provider;
+        showPicked.run();
+      });
+      picker.getChildren().add(button);
+    }
 
     Button add = new Button("+ 키 추가");
     add.getStyleClass().add("dialog-button");
     add.setOnAction(e -> {
-      TextField field = addRow(rows, "");
+      TextField field = addRow(rowsOf.get(picked[0]), picked[0], "");
       scroll.layout();
       scroll.setVvalue(1);
       field.requestFocus();
@@ -115,11 +165,14 @@ public final class KeysDialog {
 
     boolean[] saved = { false };
     Runnable save = () -> {
-      List<String> keys = new ArrayList<>();
-      for (var node : rows.getChildren())
-        keys.add(clean(fieldOf(node).getText()));
       try {
-        GeminiClient.writeKeys(keys);
+        for (Provider provider : Provider.values()) {
+          List<String> keys = new ArrayList<>();
+          for (var node : rowsOf.get(provider).getChildren())
+            keys.add(clean(fieldOf(node).getText()));
+          GeminiClient.writeKeys(provider, keys);
+        }
+        GeminiClient.writeProvider(picked[0]);
         llm.reload();
         saved[0] = true;
         dialog.close();
@@ -129,13 +182,6 @@ public final class KeysDialog {
         error.setVisible(true);
       }
     };
-
-    // 왼쪽 아래 — 키 발급/상태 보는 곳
-    Label link = new Label("aistudio.google.com/api-keys");
-    link.setGraphic(Emoji.view("🔗", LEGEND_SIZE));
-    link.getStyleClass().add("keys-link");
-    link.setCursor(Cursor.HAND);
-    link.setOnMouseClicked(e -> MarkdownView.openInBrowser(KEY_PAGE));
 
     Button cancel = new Button("취소");
     cancel.getStyleClass().add("dialog-button");
@@ -150,7 +196,7 @@ public final class KeysDialog {
     HBox buttons = new HBox(8, link, spacer, cancel, ok);
     buttons.setAlignment(Pos.CENTER_LEFT);
 
-    VBox root = new VBox(12, heading, sub, scroll, add, error, buttons);
+    VBox root = new VBox(12, heading, picker, sub, scroll, add, error, buttons);
     root.getStyleClass().add("dialog-root");
     root.setPadding(new Insets(22));
     root.setPrefWidth(full ? FULL_WIDTH : 520);
@@ -175,7 +221,7 @@ public final class KeysDialog {
     dialog.setOnShown(e -> {
       centerOn(dialog, owner);
       // 비어 있는 칸이 있으면 거기로. 다 차 있으면 아무 칸에도 안 들어간다 — 들어가면 키가 드러나니까
-      for (var node : rows.getChildren()) {
+      for (var node : rowsOf.get(picked[0]).getChildren()) {
         if (fieldOf(node).getText().isBlank()) {
           fieldOf(node).requestFocus();
           return;
@@ -188,7 +234,7 @@ public final class KeysDialog {
   }
 
   /** 키 한 줄: 불 · WIZ_n · 입력칸 · 상태 · 지우기 */
-  private static TextField addRow(VBox rows, String key) {
+  private static TextField addRow(VBox rows, Provider provider, String key) {
     Label light = new Label();
     light.getStyleClass().add("keys-light");
 
@@ -198,7 +244,7 @@ public final class KeysDialog {
 
     TextField field = new TextField(key);
     field.getStyleClass().add("dialog-textfield");
-    field.setPromptText("AIza… 붙여넣기");
+    field.setPromptText(provider.keyHint());
 
     HBox.setHgrow(field, Priority.ALWAYS);
     // 칸을 누르기 전엔 글자를 투명하게 — 누르면 들어가면서 드러난다
@@ -228,21 +274,21 @@ public final class KeysDialog {
       rows.getChildren().remove(row);
       // 다 지워도 빈칸 하나는 남겨둔다 — 새로 붙여넣을 자리
       if (rows.getChildren().isEmpty())
-        addRow(rows, "");
-      renumber(rows);
+        addRow(rows, provider, "");
+      renumber(rows, provider);
     });
 
     rows.getChildren().add(row);
-    renumber(rows);
+    renumber(rows, provider);
     return field;
   }
 
   /** 지우고 나면 번호가 당겨진다 — 저장했을 때 .env 에 적힐 이름 그대로 보여준다 */
-  private static void renumber(VBox rows) {
+  private static void renumber(VBox rows, Provider provider) {
     int n = 1;
     for (var node : rows.getChildren()) {
       Label name = (Label) ((HBox) node).getChildren().get(1);
-      name.setText("WIZ_" + n++);
+      name.setText(provider.prefix() + "_" + n++);
     }
   }
 

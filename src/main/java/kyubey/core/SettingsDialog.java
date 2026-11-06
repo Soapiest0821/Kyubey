@@ -165,6 +165,13 @@ public final class SettingsDialog {
   /** 테마마다 한 번만 만들어두는 다른 창용 style.css 주소. Pretendard 를 켜고 끄면 비운다 */
   private static final Map<Theme, String> themedUrls = new java.util.EnumMap<>(Theme.class);
 
+  /** 내 프로필 — 수다 멤버 탭에 뜬다. 닉네임이 비었으면 "나" (ProfileCard). 사진은 파일 자리, 없으면 빈 글 */
+  public String myName = "";
+  public String myImage = "";
+  public String myStatus = "";
+  /** 내 프로필 카드 위 띠 색 (#rrggbb). 비었으면 테마 기본색 */
+  public String myBanner = "";
+
   /** 폴더 이름으로 찾아 열 수 있게 훑어둘 뿌리 폴더들 */
   public List<String> scanRoots = new ArrayList<>();
 
@@ -355,6 +362,20 @@ public final class SettingsDialog {
   public static void saveChatPartner(String id) {
     SettingsDialog s = load();
     s.chatPartner = id == null || id.equals(s.partner) ? null : id;
+    try {
+      s.save();
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+  }
+
+  /** 내 프로필만 바꿔 남긴다 — 프로필 카드에서 고치고 닫을 때 */
+  public static void saveMyProfile(String name, String image, String status, String banner) {
+    SettingsDialog s = load();
+    s.myName = name;
+    s.myImage = image;
+    s.myStatus = status;
+    s.myBanner = banner;
     try {
       s.save();
     } catch (IOException e) {
@@ -907,7 +928,7 @@ public final class SettingsDialog {
     // ── 단축키로 여는 화면 ── 다음에 창을 열 때부터
     ToggleGroup openGroup = new ToggleGroup();
     RadioButton openWidget = new RadioButton("기본 위젯");
-    RadioButton openAurora = new RadioButton("오로라 (화면 가운데 빛 속 입력창 — ← → ↓ 로 기본 위젯)");
+    RadioButton openAurora = new RadioButton("오로라 (화면 가운데 빛 속 입력창 — Alt+↑ 로 기본 위젯, 거기서 ↓ 로 오로라)");
     for (RadioButton rb : List.of(openWidget, openAurora)) {
       rb.setToggleGroup(openGroup);
       rb.getStyleClass().add("dialog-path-label");
@@ -1339,7 +1360,7 @@ public final class SettingsDialog {
   }
 
   /** #rrggbb — 투두메이트 색과 같은 꼴로 남긴다 */
-  private static String hex(Color c) {
+  public static String hex(Color c) {
     return String.format("#%02x%02x%02x",
         Math.round(c.getRed() * 255), Math.round(c.getGreen() * 255), Math.round(c.getBlue() * 255));
   }

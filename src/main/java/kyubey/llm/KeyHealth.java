@@ -80,7 +80,7 @@ public final class KeyHealth {
     return switch (reason) {
       case "성공" -> State.OK;
       case "서버 오류", "응답 없음" -> State.ERROR;
-      case "한도 초과" -> State.LIMIT;
+      case "한도 초과", "크레딧 부족" -> State.LIMIT;
       case "키 무효", "인증 실패", "권한 없음" -> State.DEAD;
       default -> null;
     };

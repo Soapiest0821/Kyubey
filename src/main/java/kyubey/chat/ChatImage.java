@@ -1,14 +1,31 @@
 package kyubey.chat;
 
+import kyubey.core.SettingsDialog;
+import kyubey.ui.WindowDrag;
 import javafx.embed.swing.SwingFXUtils;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Cursor;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
+import javafx.stage.Modality;
+import javafx.stage.Screen;
+import javafx.stage.Stage;
+import javafx.stage.StageStyle;
+import javafx.stage.Window;
 
 import java.awt.Color;
 import java.awt.Desktop;
@@ -17,6 +34,7 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.net.URI;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
@@ -60,6 +78,9 @@ final class ChatImage {
   /** 말풍선에 그릴 긴 변 길이 */
   private static final double BUBBLE_EDGE = 240;
   private static final double CORNER = 28;
+
+  /** 팝업이 화면에서 차지할 수 있는 몫 */
+  private static final double POPUP_SHARE = 0.8;
 
   private ChatImage() {
   }
@@ -149,6 +170,22 @@ final class ChatImage {
       return null;
 
     double scale = Math.min(1, BUBBLE_EDGE / Math.max(image.getWidth(), image.getHeight()));
+    StackPane box = new StackPane(rounded(image, scale));
+    box.setAlignment(Pos.CENTER);
+    box.setCursor(Cursor.HAND);
+    box.setOnMouseClicked(e -> {
+      if (e.getButton() != MouseButton.PRIMARY)
+        return;
+      e.consume();
+      popup(box.getScene() == null ? null : box.getScene().getWindow(), file);
+    });
+    // 지난 대화 창은 이 메뉴 그대로 쓰고, 수다 화면은 말풍선 메뉴로 덮어쓴다 (ChatPane.bubbleMenu)
+    offerOriginal(box, file);
+    return box;
+  }
+
+  /** 모서리를 둥글린 그림 */
+  private static ImageView rounded(Image image, double scale) {
     double width = image.getWidth() * scale;
     double height = image.getHeight() * scale;
     ImageView view = new ImageView(image);
@@ -159,16 +196,91 @@ final class ChatImage {
     corners.setArcWidth(CORNER);
     corners.setArcHeight(CORNER);
     view.setClip(corners);
+    return view;
+  }
 
-    StackPane box = new StackPane(view);
-    box.setAlignment(Pos.CENTER);
-    box.setCursor(Cursor.HAND);
-    // 누르면 윈도우의 사진 뷰어로 크게 본다
-    box.setOnMouseClicked(e -> {
-      if (e.getButton() == MouseButton.PRIMARY)
-        open(file);
+  /** 사진을 팝업으로 크게 보이고 닫힐 때까지 기다린다. Esc / Enter 로 닫는다 */
+  static void popup(Window owner, File file) {
+    popup(owner, new Image(file.toURI().toString()), file);
+  }
+
+  /** 줄여 읽어둔 그림을 원본 크기로 다시 읽어 크게 보인다. 프로그램에 든 그림은 받은 그대로 */
+  static void popup(Window owner, Image shown) {
+    String url = shown.getUrl();
+    if (url == null)
+      popup(owner, shown, null);
+    else
+      popup(owner, new Image(url), url.startsWith("file:") ? new File(URI.create(url)) : null);
+  }
+
+  /** file 이 있으면 오른쪽 클릭으로 원본을 열 수 있다 */
+  private static void popup(Window owner, Image image, File file) {
+    if (image.isError() || image.getWidth() <= 0)
+      return;
+    Stage dialog = new Stage();
+    if (owner != null)
+      dialog.initOwner(owner);
+    dialog.initModality(Modality.APPLICATION_MODAL);
+    dialog.initStyle(StageStyle.TRANSPARENT);
+
+    Rectangle2D screen = screenOf(owner);
+    double scale = Math.min(1, POPUP_SHARE * Math.min(screen.getWidth() / image.getWidth(), screen.getHeight() / image.getHeight()));
+    StackPane picture = new StackPane(rounded(image, scale));
+    if (file != null)
+      offerOriginal(picture, file);
+
+    Button close = new Button("닫기");
+    close.getStyleClass().add("dialog-button-primary");
+    close.setOnAction(e -> dialog.close());
+    HBox buttons = new HBox(close);
+    buttons.setAlignment(Pos.CENTER_RIGHT);
+
+    VBox root = new VBox(12, picture, buttons);
+    root.getStyleClass().addAll("dialog-root", "notice-root");
+    root.setPadding(new Insets(14));
+
+    Scene scene = new Scene(root);
+    scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
+    scene.getStylesheets().add(SettingsDialog.styleUrl());
+    scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+      if (e.getCode() == KeyCode.ESCAPE || e.getCode() == KeyCode.ENTER) {
+        e.consume();
+        dialog.close();
+      }
     });
-    return box;
+
+    dialog.setScene(scene);
+    WindowDrag.makeDraggable(dialog, root);
+    dialog.setOnShown(e -> {
+      SecretNote.centerOn(dialog, owner);
+      close.requestFocus();
+    });
+    dialog.showAndWait();
+  }
+
+  /** 띄운 쪽 창이 있는 화면의 쓸 수 있는 넓이. 작업 표시줄은 뺀다 */
+  private static Rectangle2D screenOf(Window owner) {
+    if (owner == null)
+      return Screen.getPrimary().getVisualBounds();
+    return Screen.getScreensForRectangle(owner.getX(), owner.getY(), owner.getWidth(), owner.getHeight()).stream()
+        .findFirst().orElse(Screen.getPrimary()).getVisualBounds();
+  }
+
+  /** 오른쪽 클릭으로 원본 보기만 고를 수 있게 */
+  private static void offerOriginal(Region picture, File file) {
+    picture.setOnContextMenuRequested(e -> {
+      ContextMenu menu = new ContextMenu(originalItem(file));
+      menu.getStyleClass().add("chat-menu");
+      menu.show(picture, e.getScreenX(), e.getScreenY());
+      e.consume();
+    });
+  }
+
+  /** 오른쪽 클릭 메뉴의 "원본 보기" — 저장된 사진 파일을 윈도우의 사진 뷰어로 연다 */
+  static MenuItem originalItem(File file) {
+    MenuItem item = new MenuItem("원본 보기");
+    item.setOnAction(e -> open(file));
+    return item;
   }
 
   private static void open(File file) {

@@ -38,7 +38,7 @@ import kyubey.ui.Theme;
 import kyubey.ui.WindowDrag;
 
 /**
- * 수다 화면에서 마도카를 누르면 뜨는 창 — "채팅 삭제" 로 지운 지난 대화들을 꺼내 본다.
+ * 오른쪽 탭의 지난 대화(ChatSide)에서 하나를 누르면 뜨는 창 — "채팅 삭제" 로 지운 대화들을 꺼내 본다.
  *
  * 왼쪽에 지운 대화 목록(최근 것부터), 고르면 오른쪽에 그때 말풍선이 그대로 그려진다.
  * 보기만 한다 — 이어서 말을 걸거나 되살리는 길은 없다. 지운 얘기를 마도카가 다시 알게 되면
@@ -70,11 +70,11 @@ public final class ChatArchiveDialog {
   }
 
   /**
-   * 창을 띄우고 닫힐 때까지 기다린다. noteSingleClick 이면 비밀 쪽지를 한 번 눌러 연다 (수다 화면과 같은 규칙).
+   * 창을 띄우고 닫힐 때까지 기다린다. entries 는 지운 대화들, initial 은 펼쳐둘 대화다. noteSingleClick 이면 비밀 쪽지를 한 번 눌러 연다 (수다 화면과 같은 규칙).
    * name 은 캐릭터 이름 — 답장 인용에 쓴다. likingEmojis 는 호감도 칸마다 쓸 이모지 (수다 화면과 같은 것)
    */
-  public static void show(Stage owner, ChatArchive archive, String name, boolean noteSingleClick, List<String> likingEmojis,
-      Predicate<Affection.Change> revealed) {
+  public static void show(Stage owner, List<ChatArchive.Entry> entries, ChatArchive.Entry initial, String name,
+      boolean noteSingleClick, List<String> likingEmojis, Predicate<Affection.Change> revealed) {
     Stage dialog = new Stage();
     dialog.initOwner(owner);
     dialog.initModality(Modality.APPLICATION_MODAL);
@@ -109,7 +109,6 @@ public final class ChatArchiveDialog {
 
     // 오른쪽에 그려진 말풍선 줄마다 그 줄 — 호감도 기록에서 그 말로 찾아갈 때 (render 가 채운다)
     Map<ChatHistory.Line, Node> rows = new HashMap<>();
-    List<ChatArchive.Entry> entries = archive.list();
     ListView<ChatArchive.Entry> list = new ListView<>();
     list.getStyleClass().add("dialog-alias-list");
     list.setMinWidth(LIST_WIDTH);
@@ -184,7 +183,8 @@ public final class ChatArchiveDialog {
     WindowDrag.makeDraggable(dialog, root);
     dialog.setOnShown(e -> {
       centerOn(dialog, owner);
-      // 처음엔 아무것도 펼치지 않는다 — 목록에서 골라야 그 대화가 보인다
+      list.getSelectionModel().select(initial);
+      list.scrollTo(initial);
       list.requestFocus();
     });
     dialog.showAndWait();
@@ -194,7 +194,7 @@ public final class ChatArchiveDialog {
    * 목록 한 칸: 마지막으로 말이 오간 날과 줄 수 ("9월 28일 · 42줄").
    * 올해가 아니면 연도까지 넣되 목록 폭에 들어가게 짧게 ("2025.9.28 · 42줄").
    */
-  private static String summary(ChatArchive.Entry entry) {
+  static String summary(ChatArchive.Entry entry) {
     LocalDate last = when(entry.lines.get(entry.lines.size() - 1)).toLocalDate();
     String day = last.getYear() == LocalDate.now().getYear() ? DAY.format(last) : YEAR_DAY.format(last);
     return day + " · " + entry.lines.size() + "줄";

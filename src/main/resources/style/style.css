@@ -1672,3 +1672,106 @@
   -fx-border-style: segments(5, 4);
   -fx-border-width: 1.5;
 }
+
+/* ── 수다 화면 오른쪽 탭 (ChatSide) ── */
+.chat-side-body,
+.chat-side-body > .viewport {
+  -fx-background-color: rgba(255, 255, 255, 0.3);
+  -fx-background-radius: 12;
+}
+
+.chat-side-row {
+  -fx-background-radius: 8;
+  -fx-padding: 4 6 4 6;
+  -fx-cursor: hand;
+}
+
+.chat-side-row:hover {
+  -fx-background-color: rgba(255, 105, 160, 0.16);
+}
+
+.chat-side-sub {
+  -fx-font-size: 11px;
+  -fx-text-fill: #7a5566;
+}
+
+.chat-side-link {
+  -fx-font-size: 11px;
+  -fx-text-fill: #b32b5e;
+  -fx-underline: true;
+  -fx-padding: 2 2 2 2;
+  -fx-cursor: hand;
+}
+
+/* ── 프로필 카드 (ProfileCard) ── */
+.profile-banner-clear {
+  -fx-background-color: rgba(255, 255, 255, 0.75);
+  -fx-background-radius: 999;
+  -fx-text-fill: #4a2c3a;
+  -fx-font-size: 11px;
+  -fx-font-weight: bold;
+  -fx-padding: 0;
+  -fx-min-width: 18px;
+  -fx-pref-width: 18px;
+  -fx-max-width: 18px;
+  -fx-min-height: 18px;
+  -fx-pref-height: 18px;
+  -fx-max-height: 18px;
+  -fx-cursor: hand;
+}
+
+.profile-banner-clear:hover {
+  -fx-background-color: #ffffff;
+}
+
+.dialog-root.profile-card {
+  -fx-background-color: #fff0f6;
+}
+
+.profile-banner {
+  -fx-background-color: #ff69a0;
+  -fx-background-radius: 20 20 0 0;
+}
+
+.profile-ring {
+  -fx-background-color: #fff0f6;
+  -fx-background-radius: 999;
+  -fx-padding: 3;
+}
+
+.profile-avatar-back {
+  -fx-fill: #ffd2e6;
+}
+
+.profile-avatar-letter {
+  -fx-text-fill: #b32b5e;
+  -fx-font-weight: bold;
+}
+
+.profile-name {
+  -fx-font-size: 17px;
+  -fx-font-weight: bold;
+  -fx-text-fill: #4a2c3a;
+}
+
+.profile-caption {
+  -fx-font-size: 11px;
+  -fx-font-weight: bold;
+  -fx-text-fill: #9b7383;
+}
+
+.profile-status {
+  -fx-font-size: 13px;
+  -fx-text-fill: #4a2c3a;
+  -fx-line-spacing: 2;
+}
+
+.profile-input {
+  -fx-background-color: rgba(255, 255, 255, 0.8);
+  -fx-background-radius: 8;
+  -fx-border-color: rgba(255, 105, 160, 0.5);
+  -fx-border-radius: 8;
+  -fx-text-fill: #4a2c3a;
+  -fx-font-size: 13px;
+  -fx-padding: 3 8 3 8;
+}

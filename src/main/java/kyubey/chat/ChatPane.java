@@ -1,5 +1,6 @@
 package kyubey.chat;
 
+import kyubey.core.SettingsDialog;
 import kyubey.llm.LlmClient;
 import javafx.animation.Animation;
 import javafx.animation.FadeTransition;
@@ -313,6 +314,27 @@ public class ChatPane extends BorderPane {
   /** 마도카가 선 세로줄과 말풍선 사이에 두는 틈. 그림에 딱 붙으면 말풍선이 그림을 타는 것처럼 보인다 */
   private static final double MASCOT_GAP = 24;
 
+  /** 전체화면에서 오른쪽 탭(ChatSide)의 폭과 대화 칸과의 틈. 창에선 그림 세로줄 폭을 따른다 */
+  private static final double SIDE_WIDTH = 225;
+  private static final double SIDE_GAP = 16;
+
+  /** 그림이 좁거나 없어도 오른쪽 탭이 읽히게 비워두는 가장 좁은 폭 */
+  public static final double SIDE_MIN_WIDTH = 170;
+
+  /** 상태 메시지 길이 제한 — 모델이 길게 써와도 프로필에 한 줄로 들어가게 */
+  private static final int STATUS_MAX = 40;
+
+  /** 상태 메시지를 쓸 때 보여주는 최근 말풍선 수 */
+  private static final int STATUS_RECENT = 10;
+
+  /** 상태 메시지를 새로 써달라고 시키는 말 (maybeRewriteStatus) */
+  private static final String STATUS_ASK = """
+      메신저 프로필에 걸어둘 상태 메시지를 새로 써줘.
+      - 네 성격과 말투 그대로, 요즘 기분이나 하고 있는 일을 혼잣말처럼 한 줄로.
+      - 20자 안쪽으로 짧게.
+      - 따옴표나 설명 없이 상태 메시지 글만 답해.
+      """;
+
   /** 말풍선 옆에 붙는 시각 ("오후 2:35") */
   private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("a h:mm", Locale.KOREAN);
 
@@ -395,6 +417,9 @@ public class ChatPane extends BorderPane {
   private final ChatHistory store;
   /** 지운 대화를 버리지 않고 모아두는 곳 (clearChat) */
   private final ChatArchive archive;
+  private final ChatStatus status;
+  /** 상태 메시지를 쓰는 중인지 (maybeRewriteStatus) */
+  private boolean writingStatus;
   private final WorkingMemory memory;
   private final ChatPrompt prompt;
   private final Presence presence;
@@ -416,6 +441,15 @@ public class ChatPane extends BorderPane {
   /** 지금 그려진 말풍선 줄마다 그 줄 — 호감도 기록에서 그 말로 찾아갈 때 (jumpTo). render 가 채운다 */
   private final Map<ChatHistory.Line, Node> rows = new HashMap<>();
   private final TextField input = new TextField();
+
+  /** 오른쪽 탭 — 멤버 · 톡서랍 · 지난 대화 */
+  private final ChatSide side = new ChatSide(this);
+  /** 오른쪽 탭이 설 세로줄 (reserveRight). 0 이면 전체화면이라 대화 칸 바깥 오른쪽에 선다 */
+  private double sideColumn;
+  /** 세로줄 오른쪽 끝에서 창 끝까지 */
+  private double sideEdge;
+  /** 탭 밑으로 비워둘 높이 — 그림이 서는 자리 */
+  private double sideBelow;
 
   /** 머리말의 상대 이름 */
   private final Label title = new Label();
@@ -609,6 +643,7 @@ public class ChatPane extends BorderPane {
     this.memory = new WorkingMemory(profile.path("memo.json"));
     this.prompt = new ChatPrompt(profile.path("prompt.json"));
     this.presence = new Presence(profile.path("presence.json"));
+    this.status = new ChatStatus(profile.path("status.json"));
     // 값은 "호감도 초기화" 로만 0 이 된다. "채팅 삭제" 는 오르내린 기록만 비운다
     this.affection = new Affection(profile.path("affection.json"));
     this.onExit = onExit;
@@ -730,6 +765,9 @@ public class ChatPane extends BorderPane {
     setTop(header);
     setCenter(scroll);
     setBottom(bottom);
+    // BorderPane 칸이 아니라 비워둔 오른쪽 세로줄에 직접 세운다 (layoutChildren)
+    side.setManaged(false);
+    getChildren().add(side);
 
     // Esc 는 수다 화면 통째로 받는다. 입력칸에만 달아 두면 말풍선이나 스크롤을
     // 한 번 누른 뒤처럼 포커스가 입력칸을 떠나 있을 때 안 먹힌다.
@@ -800,10 +838,28 @@ public class ChatPane extends BorderPane {
    * 입력칸만 비켜주면 오른쪽에 붙는 내 말풍선이 그림 위로 올라타서,
    * 화면 전체를 그만큼 왼쪽으로 물린다 — 머리말도 말풍선도 입력칸도 전부 그림 왼쪽에서 끝나게.
    * 거기에 MASCOT_GAP 만큼 더 띄워서 그림과 말풍선 사이에 여백을 남긴다.
+   *
+   * 비운 세로줄의 그림 위쪽에는 오른쪽 탭(ChatSide)이 선다. edge 는 세로줄 오른쪽 끝에서 창 끝까지,
+   * below 는 창 아래에서 탭이 멈출 높이다. 그래서 탭 내용이 그림과 안 겹치고 그 위에서 잘린다.
    */
-  public void reserveRight(double column) {
+  public void reserveRight(double column, double edge, double below) {
     setPadding(new Insets(PADDING.getTop(), Math.max(0, column) + MASCOT_GAP,
         PADDING.getBottom(), PADDING.getLeft()));
+    sideColumn = Math.max(0, column);
+    sideEdge = edge;
+    sideBelow = below;
+    requestLayout();
+  }
+
+  /** 오른쪽 탭을 세운다. 전체화면에선 대화 칸이 가운데 서고 그림은 떠 있으니 대화 칸 바로 오른쪽에 */
+  @Override
+  protected void layoutChildren() {
+    super.layoutChildren();
+    double top = PADDING.getTop();
+    if (sideColumn > 0)
+      side.resizeRelocate(getWidth() - sideColumn, top, sideColumn - sideEdge, Math.max(0, getHeight() - top - sideBelow));
+    else
+      side.resizeRelocate(getWidth() + SIDE_GAP, top, SIDE_WIDTH, Math.max(0, getHeight() - top - PADDING.getBottom()));
   }
 
   /** 포커스를 줄 곳. 창을 다시 띄울 때 Main 이 여기로 돌려준다 */
@@ -863,15 +919,115 @@ public class ChatPane extends BorderPane {
     return lines.isEmpty() || readAt >= lines.get(lines.size() - 1).at;
   }
 
-  /** 지운 대화들이 모인 곳. 수다 화면에서 마도카를 누르면 Main 이 이걸로 목록 창을 띄운다 */
-  public ChatArchive archive() {
+  /** 지운 대화들이 모인 곳. 오른쪽 탭의 지난 대화가 이걸 펼친다 */
+  ChatArchive archive() {
     return archive;
+  }
+
+  /** 지금 대화 줄들 — 오른쪽 탭의 톡서랍이 읽는다 */
+  List<ChatHistory.Line> lines() {
+    return lines;
+  }
+
+  /** 프사가 새로 왔을 때 — 멤버 탭이 떠 있으면 다시 그린다 */
+  public void refreshMembers() {
+    side.refreshMembers();
+  }
+
+  /** 상대가 써둔 상태 메시지. 아직 없으면 빈 글 */
+  String statusText() {
+    return status.text();
+  }
+
+  /** 입력칸으로 포커스를 돌려준다 — 오른쪽 탭에서 띄운 창이 닫힐 때 */
+  void focusInput() {
+    Platform.runLater(() -> Ime.focus(input));
+  }
+
+  /** 지난 대화 창을 entry 가 펼쳐진 채로 띄운다 */
+  void openArchive(List<ChatArchive.Entry> entries, ChatArchive.Entry entry) {
+    ChatArchiveDialog.show((javafx.stage.Stage) getScene().getWindow(), entries, entry, name(), noteSingleClick(), likingEmojis(),
+        reasonRevealed());
+    focusInput();
+  }
+
+  /**
+   * 상태 메시지를 새로 쓸 차례면 (ChatStatus.roll) 상대한테 한 줄 받아둔다. 수다 화면에 들어올 때 부른다.
+   * 메모 접기처럼 화면에 표시 없이 조용히 하고, 실패하면 있던 글을 그대로 둔다.
+   */
+  private void maybeRewriteStatus() {
+    long now = System.currentTimeMillis();
+    if (writingStatus || !llm.isReady() || !status.roll(now))
+      return;
+    String persona = statusPersona();
+    String ask = statusAsk();
+    writingStatus = true;
+
+    Task<String> task = new Task<>() {
+      @Override
+      protected String call() throws Exception {
+        return llm.chat(persona, List.of(new LlmClient.Message(true, ask)), LlmClient.Mode.FAST);
+      }
+    };
+    task.setOnSucceeded(e -> {
+      writingStatus = false;
+      String written = statusLine(task.getValue());
+      if (written.isBlank())
+        return;
+      status.write(written, System.currentTimeMillis());
+      side.refreshMembers();
+    });
+    task.setOnFailed(e -> writingStatus = false);
+
+    Thread worker = new Thread(task, "madoka-status");
+    worker.setDaemon(true);
+    worker.start();
+  }
+
+  /** 상태 메시지를 쓸 때 입히는 성격 — 말풍선 쪼개기 같은 말하는 방식(BasePrompt)은 필요 없어서 뺀다 */
+  private String statusPersona() {
+    String known = WorkingMemory.plain(memo, LocalDate.now());
+    String persona = fill(prompt()).strip();
+    return known.isBlank() ? persona : persona + "\n\n[기억해 둔 것]\n" + known;
+  }
+
+  /** 지금 상태 메시지와 최근 말풍선을 붙인 부탁 */
+  private String statusAsk() {
+    StringBuilder sb = new StringBuilder(STATUS_ASK);
+    if (!status.text().isBlank())
+      sb.append("\n지금 상태 메시지 (이것과는 다르게 써): ").append(status.text()).append('\n');
+    List<String> recent = new ArrayList<>();
+    for (int i = lines.size() - 1; i >= 0 && recent.size() < STATUS_RECENT; i--) {
+      ChatHistory.Line line = lines.get(i);
+      if (!line.hidden && !line.note)
+        recent.add(0, (line.mine ? "상대" : name()) + ": " + line.text);
+    }
+    if (!recent.isEmpty())
+      sb.append("\n[최근 대화]\n").append(String.join("\n", recent)).append('\n');
+    return sb.toString();
+  }
+
+  /** 모델 답에서 첫 줄만, 감싼 따옴표를 벗겨 길이 제한 안으로 */
+  static String statusLine(String raw) {
+    if (raw == null)
+      return "";
+    for (String line : raw.strip().split("\n")) {
+      String text = line.strip().replaceAll("^[\"'“”‘’「『]+|[\"'“”‘’」』]+$", "").strip();
+      if (text.isEmpty() || text.startsWith("```"))
+        continue;
+      return text.length() <= STATUS_MAX ? text : text.substring(0, STATUS_MAX);
+    }
+    return "";
   }
 
   /** 마도카를 눌러서 이 화면으로 들어올 때 */
   public void enter() {
     // 여기까지 들어왔으면 밀려 있던 말은 다 눈앞에 있다 — 그림 옆 배지를 거둔다
     setUnread(0);
+    // 들어올 때 오른쪽 탭은 멤버로
+    side.reset();
+    maybeRewriteStatus();
+    ChatAvatar.refresh(profile, side::refreshMembers);
     if (!greeted) {
       greeted = true;
       addLine(GREETING, false);
@@ -891,7 +1047,7 @@ public class ChatPane extends BorderPane {
    * foldedUpTo 도 그대로 둔다. 새로 붙는 줄은 다 그 뒤 시각이라 이어서 접으면 된다.
    *
    * 다만 지운 대화는 ChatArchive 에 한 파일로 따로 남긴다. 마도카한테 다시 들려주진 않고,
-   * 수다 화면에서 마도카를 누르면 뜨는 창(ChatArchiveDialog)에서 보기만 한다.
+   * 오른쪽 탭의 지난 대화에서 고르면 뜨는 창(ChatArchiveDialog)에서 보기만 한다.
    *
    * 답을 기다리는 중에 지울 수도 있다 (답이 늦어서 Esc 로 나왔다가 지우는 경우). era 를 한 칸
    * 올려두면 뒤늦게 온 답도, 돌던 요약도 제 발로 물러난다 — era 주석 참고.
@@ -918,6 +1074,7 @@ public class ChatPane extends BorderPane {
     pending = false;
     queued = false;
     cancelReply();
+    side.refresh();
     // 지워버린 말이 "안 읽은 말" 로 남아 배지가 안 꺼지는 일이 없게
     setUnread(0);
     // 지운 뒤로는 인사도 안 한다 — 원칙적으로 입을 다물고, 가끔만 먼저 건다 (silent)
@@ -1499,7 +1656,7 @@ public class ChatPane extends BorderPane {
         break;
       }
     }
-    request(window(), 0, false, null, target, WebPicture.asked(unanswered(), recentTalk()));
+    request(window(), 0, false, null, target, WebPicture.asked(unanswered(), recentTalk()), false);
   }
 
   /** 사진 얘기 중인지 볼 줄 수. 조르는 동안 말이 몇 번 오가도 끊기지 않을 만큼 */
@@ -1590,15 +1747,17 @@ public class ChatPane extends BorderPane {
    * (깜짝 긁기, withNotes). 쪽지를 끈 설정이면 둘 다 보통 말풍선으로 풀어 올린다.
    */
   private void request(List<LlmClient.Message> snapshot, long earlierMs, boolean asNote, Runnable onAnswered) {
-    request(snapshot, earlierMs, asNote, onAnswered, null, false);
+    request(snapshot, earlierMs, asNote, onAnswered, null, false, true);
   }
 
   /**
    * quote 가 있으면 첫 말풍선을 그 말에 대한 답장으로 올린다 (ask).
    * picture 면 이번 턴에만 사진 보내는 법을 일러주고, 답에 표시가 오면 찾아서 말풍선 뒤에 붙인다 (WebPicture)
+   * cued 면 끝에 붙은 건 내가 친 말이 아니라 위젯이 끼워 넣은 안내다. 안내 글자를 내 말로 잘못 읽으니
+   * 할 일 목록을 찾지 않는다 (withTodos). 할 일 얘기를 시키는 안내엔 그 할 일이 이미 적혀 있다.
    */
   private void request(List<LlmClient.Message> snapshot, long earlierMs, boolean asNote, Runnable onAnswered,
-      ChatHistory.Line quote, boolean picture) {
+      ChatHistory.Line quote, boolean picture, boolean cued) {
     if (asking || snapshot.isEmpty())
       return;
 
@@ -1610,8 +1769,9 @@ public class ChatPane extends BorderPane {
 
     // 시각을 물려 찍는 말이면 [지금 시각] 도 그 시각으로 — 마도카는 그때 보낸 말을 쓰는 거라서
     long saidAt = System.currentTimeMillis() - earlierMs;
+    String known = cued ? persona() : withStatus(withTodos(persona(), snapshot), snapshot);
     String persona = WebPicture.withGuide(
-        withNotes(withNow(withAffection(withTodos(persona(), snapshot), snapshot), saidAt), asNote), picture, profile);
+        withNotes(withNow(withAffection(known, snapshot), saidAt), asNote), picture, profile);
     String pictureDir = profile.path(ChatImage.DIR);
     int startedIn = era;
     asking = true;
@@ -1620,7 +1780,8 @@ public class ChatPane extends BorderPane {
       @Override
       protected WebPicture.Reply call() throws Exception {
         String raw = llm.chat(persona, snapshot, LlmClient.Mode.FAST, true);
-        return WebPicture.resolve(raw, picture && !affectionDrops(raw), pictureDir, sentPictures);
+        boolean wanted = picture || WebPicture.faked(raw);
+        return WebPicture.resolve(raw, wanted && !affectionDrops(raw), pictureDir, sentPictures, profile);
       }
     };
 
@@ -1954,6 +2115,8 @@ public class ChatPane extends BorderPane {
         WebPicture.Found picture = pictureNext;
         pictureNext = null;
         addLine(ChatImage.TEXT, false, System.currentTimeMillis() - earlierMs, false, picture.path(), picture.caption());
+        lines.get(lines.size() - 1).pictureSearch = picture.search();
+        store.save(lines);
       }
       asking = false;
       // 말하는 사이 끼어든 말이 있으면 바로 그 중 마지막 말에 답장한다 (ask 가 짚는다)
@@ -2045,6 +2208,8 @@ public class ChatPane extends BorderPane {
     talkedAt = System.currentTimeMillis();
     savePresence();
     append(line);
+    if (image != null || !ChatSide.linksIn(text).isEmpty())
+      side.refreshDrawer();
     // 눈앞에서 붙은 말은 붙자마자 읽은 셈이다
     if (input.isFocused())
       markRead();
@@ -2152,6 +2317,26 @@ public class ChatPane extends BorderPane {
   }
 
   /**
+   * 건네는 말 중에 상태 메시지 얘기가 나오면 양쪽 상태 메시지를 성격문 뒤에 붙여준다. 평소엔 안 실어서
+   * 토큰을 아끼고, 묻지도 않았는데 상태 메시지 얘기를 꺼내지 않게 한다. 글이 없으면 없다고 일러서
+   * 있는 척 지어내지 않게 한다.
+   */
+  private String withStatus(String base, List<LlmClient.Message> snapshot) {
+    if (!mentionsStatus(snapshot))
+      return base;
+    return base.stripTrailing() + "\n" + """
+
+        [상태 메시지]
+        메신저 프로필에 걸려 있는 상태 메시지야. 상태 메시지 얘기가 나오면 이걸 보고 답해.
+        """ + "네 상태 메시지: " + statusOrNone(status.text()) + "\n"
+        + "상대 상태 메시지: " + statusOrNone(SettingsDialog.load().myStatus) + "\n";
+  }
+
+  private static String statusOrNone(String text) {
+    return text == null || text.isBlank() ? "(아직 없어)" : text;
+  }
+
+  /**
    * 마지막 티키타카에서 내가 친 말에 오늘 할 일이 콕 집혀 나왔는지 — 집힌 할 일의 목록 줄들.
    * 할 일 글을 낱말로 쪼개 어간만 남겨서 (stems) 하나라도 내 말에 들어 있으면 집힌 걸로 친다.
    * "운동하기" 를 적어두고 "운동 갔다 왔어" 라고 해도 걸리게.
@@ -2225,16 +2410,10 @@ public class ChatPane extends BorderPane {
    * | 뒤는 왜 바뀌었는지 마도카 속마음 한마디 ([[호감도:+1|헤헤 고마워!]]). 빠져 있어도 받아준다.
    */
   private static final Pattern AFFECTION_MARK =
-      Pattern.compile("\\[\\[\\s*호감도\\s*[:：]?\\s*([+-]?)\\s*(\\d{1,3})\\s*(?:[|｜]([^\\]]*))?\\]\\]");
+      Pattern.compile("\\[\\[\\s*호감도\\s*[:：]?\\s*([+-]?)\\s*(\\d{1,9})\\s*(?:[|｜]([^\\]]*))?\\]\\]");
 
   /** 이유 한마디 최대 길이. 길게 늘어놓으면 목록에서 한눈에 안 들어와서 자른다 */
   private static final int AFFECTION_REASON_MAX = 40;
-
-  /**
-   * 한 번 답할 때 오르내릴 수 있는 폭. 더 크게 적어 와도 여기서 자른다.
-   * 보통은 1, 2 지만 크게 감동하거나 크게 상처받은 말엔 훅 움직일 수 있게 넉넉히 뒀다.
-   */
-  private static final int AFFECTION_STEP = 10;
 
   /**
    * 답에서 호감도 표시를 떼어내 호감도에 더하고, 뗀 나머지를 돌려준다. 표시가 없으면 그대로다.
@@ -2258,7 +2437,6 @@ public class ChatPane extends BorderPane {
     }
     if (!found)
       return raw;
-    delta = Math.max(-AFFECTION_STEP, Math.min(AFFECTION_STEP, delta));
     int before = liking;
     liking += delta;
     // [[호감도:0]] 이라 안 바뀌었으면 남길 것도 없다
@@ -2315,13 +2493,9 @@ public class ChatPane extends BorderPane {
     String out = base.stripTrailing() + "\n" + """
 
         [호감도]
-        네가 상대를 얼마나 좋아하는지를 숫자로 몰래 세고 있어. 0 에서 시작하고 위아래 끝은 없어.
-        답할 때마다 맨 끝 줄에 이번 대화로 바뀐 만큼을 [[호감도:+1]] 처럼 적어 (-%d ~ +%d, 그대로면 [[호감도:0]]).
-        바뀌었으면 | 뒤에 왜 그런지 네 속마음을 짧은 한마디로 붙여 — [[호감도:+2|헤헤 고민 들어줘서 고마워!]], [[호감도:-1|어휴 또 기어오르네]] 처럼.
-        상대가 다정하거나 재밌게 굴면 올리고, 무례하거나 성의 없으면 내려. 이 표시는 상대한테 안 보여.
-        폭은 마음이 움직인 만큼 정해. 소소한 말엔 1, 2 면 되지만, 진심으로 감동했거나 크게 서운하고 화났으면
-        5 든 %d 이든 망설이지 말고 크게 움직여 — [[호감도:+6|이런 말 해주는 사람 처음이야…]], [[호감도:-8|그건 진짜 상처야]] 처럼.
-        """.formatted(AFFECTION_STEP, AFFECTION_STEP, AFFECTION_STEP);
+        답 맨 끝 줄에 이번 대화로 바뀐 만큼을 [[호감도:+2|속마음 한마디]] 꼴로 적어 (그대로면 [[호감도:0]]).
+        다정하면 올리고 무례하면 내려. 소소하면 1~2, 크게 감동하거나 상처받으면 망설이지 말고 크게. 상대한텐 안 보여.
+        """;
     boolean mentioned = lastTurnMentions(snapshot, "호감도", "사랑", "좋아");
     if (!mentioned && liking >= 0)
       return out;
@@ -2383,11 +2557,8 @@ public class ChatPane extends BorderPane {
     return base.stripTrailing() + "\n" + """
 
         [비밀 쪽지]
-        상대를 깜짝 놀래키며 긁고 싶을 때 — 다정하게 굴다가 뜬금없이 "ㅗ ^^" 같은 짧은 욕이나 장난을 던질 때 —
-        그 말을 [[쪽지:ㅗ ^^]] 처럼 비밀 쪽지로 접어 보낼 수 있어. 상대는 쪽지를 눌러야 내용을 봐.
-        쪽지를 보낼 땐 쪽지 하나만 보내고 다른 말은 한 글자도 붙이지 마 (호감도 표시는 그대로 달아).
-        매번 쓰지 말고 가끔, 의외일 때만.
-        상대도 [[쪽지:...]] 로 비밀 쪽지를 보낼 수 있어. 받으면 몰래 건넨 쪽지라는 걸 알고 거기 맞게 답해.
+        가끔 의외의 순간에 장난이나 짧은 욕을 [[쪽지:ㅗ ^^]] 로 접어 보낼 수 있어. 그땐 쪽지 하나만 보내 (호감도 표시는 달아).
+        상대가 보낸 [[쪽지:...]] 는 몰래 건넨 쪽지로 알고 답해.
         """;
   }
 
@@ -2415,6 +2586,11 @@ public class ChatPane extends BorderPane {
    */
   private static boolean mentionsTodo(List<LlmClient.Message> snapshot) {
     return lastTurnMentions(snapshot, "할 일", "할일");
+  }
+
+  /** mentionsTodo 처럼 마지막 티키타카 안에서만 찾는다 */
+  private static boolean mentionsStatus(List<LlmClient.Message> snapshot) {
+    return lastTurnMentions(snapshot, "상태 메시지", "상태메시지", "상태 메세지", "상태메세지", "상메");
   }
 
   /** 마지막 티키타카 한 번(내가 친 마지막 말과 그 뒤) 안에 words 중 하나라도 나왔는지 */
@@ -3093,15 +3269,69 @@ public class ChatPane extends BorderPane {
     edit.setOnAction(e -> startEdit(line));
     MenuItem remove = new MenuItem("지우기");
     remove.setOnAction(e -> removeLine(line));
+    MenuItem refetch = new MenuItem("사진 다시 가져오기");
+    refetch.setOnAction(e -> refetchPicture(line));
     // 반응 줄은 상대 말에만 — 내 말엔 반응을 못 단다
     if (!line.mine)
       menu.getItems().addAll(react, new SeparatorMenuItem());
     menu.getItems().addAll(copy, reply);
+    // 파일이 없어진 사진은 글 말풍선으로 그려지니 열 것도 없다
+    if (line.image != null && new File(line.image).exists())
+      menu.getItems().add(ChatImage.originalItem(new File(line.image)));
     // 고칠 수 있는 건 내가 한 보통 말뿐이다 — 쪽지는 접힌 채라 고칠 글이 안 보이고, 사진엔 고칠 글이 없다
     if (line.mine && !line.note && line.image == null)
       menu.getItems().add(edit);
+    // 상대가 찾아 보낸 사진만 — 내가 올린 사진은 다시 가져올 데가 없다
+    if (!line.mine && line.image != null)
+      menu.getItems().add(refetch);
     menu.getItems().add(remove);
     return menu;
+  }
+
+  /** 다시 가져오는 중인지. 메뉴를 연달아 눌러도 한 번만 찾게 */
+  private boolean refetching;
+
+  /**
+   * 상대가 보낸 사진을 같은 조건으로 찾은 다른 사진으로 갈아끼운다. LLM 을 안 불러서 토큰이 안 들고, 설명 글은 그대로 둔다.
+   * 찾는 사이에 대화를 지웠거나 그 줄이 없어졌으면 받은 사진을 버린다.
+   */
+  private void refetchPicture(ChatHistory.Line line) {
+    if (refetching)
+      return;
+    refetching = true;
+    String dir = profile.path(ChatImage.DIR);
+    int startedIn = era;
+    Task<String> task = new Task<>() {
+      @Override
+      protected String call() throws Exception {
+        return WebPicture.refetch(line.pictureSearch, profile, dir, sentPictures);
+      }
+    };
+    task.setOnSucceeded(e -> {
+      refetching = false;
+      String path = task.getValue();
+      if (path == null) {
+        Toast.show("다른 사진을 못 찾았어");
+        return;
+      }
+      if (startedIn != era || !lines.contains(line)) {
+        ChatImage.delete(path);
+        return;
+      }
+      String old = line.image;
+      line.image = path;
+      store.save(lines);
+      ChatImage.delete(old);
+      render();
+    });
+    task.setOnFailed(e -> {
+      refetching = false;
+      System.err.println("[chat] 사진 다시 가져오기 실패: " + task.getException());
+      Toast.show("다른 사진을 못 찾았어");
+    });
+    Thread worker = new Thread(task, "chat-image-refetch");
+    worker.setDaemon(true);
+    worker.start();
   }
 
   /**
@@ -3150,6 +3380,7 @@ public class ChatPane extends BorderPane {
       cancelReply();
     store.save(lines);
     render();
+    side.refreshDrawer();
   }
 
   /**

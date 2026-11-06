@@ -122,7 +122,7 @@ public final class SecretNote {
   }
 
   /** 띄운 쪽 창 한가운데로 (Notice 와 같은 이치) */
-  private static void centerOn(Stage popup, Window owner) {
+  static void centerOn(Stage popup, Window owner) {
     if (owner == null || owner.getWidth() <= 0 || Double.isNaN(owner.getX())) {
       popup.centerOnScreen();
       return;

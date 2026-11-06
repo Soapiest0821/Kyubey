@@ -20,6 +20,7 @@ import kyubey.llm.GeminiClient;
 import kyubey.llm.LlmClient;
 import kyubey.ui.AppIcon;
 import kyubey.search.AppRegisterDialog;
+import kyubey.chat.ChatAvatar;
 import kyubey.chat.ChatPane;
 import kyubey.ui.Fonts;
 import kyubey.win.Foreground;
@@ -27,7 +28,6 @@ import kyubey.win.GlobalHotkey;
 import kyubey.win.WinNotify;
 import kyubey.ui.Ime;
 import kyubey.ui.Notice;
-import kyubey.chat.ChatArchiveDialog;
 import kyubey.llm.KeysDialog;
 import kyubey.goal.GoalPane;
 import kyubey.goal.GoalStore;
@@ -36,6 +36,7 @@ import kyubey.notepad.NotepadStore;
 import kyubey.chat.PromptDialog;
 import kyubey.share.ShareDialog;
 import kyubey.ui.WindowDrag;
+import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
@@ -98,6 +99,9 @@ public class Main extends Application {
 
   /** 마도카를 창 오른쪽·아래 모서리에서 이만큼 띄워 세운다 */
   private static final double MASCOT_MARGIN = 12;
+
+  /** 수다 화면 오른쪽 탭과 그림 사이 틈 */
+  private static final double CHAT_SIDE_GAP = 8;
 
   /** 그림을 세우는 키 */
   private static final double MASCOT_HEIGHT = SettingsDialog.MASCOT_HEIGHT;
@@ -167,6 +171,8 @@ public class Main extends Application {
 
   /** 마도카 그림 너비 + 띄운 거리 — 새로 만든 수다 화면에도 같은 세로줄을 비우게 기억해둔다 (placeBeside) */
   private double chatReserve = -1;
+  /** 수다 화면 오른쪽 탭 밑으로 비울 높이 — 그림이 없거나 치워뒀으면 창 여백만 (placeBeside) */
+  private double chatBelow;
   /** 전체화면이 아닐 때 창 너비 — 전체화면 수다의 대화 칸을 이 창에서 보던 너비 그대로 세운다 (fullChatWidth) */
   private double windowWidth = WINDOW_WIDTH;
 
@@ -217,12 +223,16 @@ public class Main extends Application {
   private boolean syncing;
   /** 창을 숨기는 중 — 숨기면서 전체화면이 풀려도 fullMode 는 그대로 둔다 */
   private boolean hiding;
+  /** 전체화면을 푸는 중인지 (leaveFullScreen) — 창을 잠깐 지워 둔 사이 또 풀지 않게 */
+  private boolean leavingFull;
   /**
    * 오로라를 쓰는 중인지 — 기본 위젯 대신 화면 가운데 빛 속에 입력창만 띄우는 것. 전체화면 모드(fullMode)와는 따로 논다
    * (창은 화면을 덮지만 기본 위젯을 크게 편 게 아니다). 단축키로 열 화면을 설정에서 오로라로 고르면 열 때마다 이걸로 뜨고,
-   * 빈 입력창에서 ← → ↓ 면 기본 위젯으로 나간다. 기본 화면에서만 켜져 있다 (applyFull)
+   * Alt+↑ 면 기본 위젯으로 나간다. 기본 화면에서만 켜져 있다 (applyFull)
    */
   private boolean aurora;
+  /** 오로라에서 목표 · 수다 · 메모로 나갔는지 — 기본 화면으로 돌아올 때 오로라를 다시 띄운다 (showHome) */
+  private boolean backToAurora;
   /** 오로라가 지금 올라와 있는지 — 할 일 줄을 감추고, 입력창이 가운데에 박혀 있게 결과 목록 자리를 늘 잡아둔다 */
   private final BooleanProperty auroraOn = new SimpleBooleanProperty();
   /** 오로라의 빛 판 — 할 일 풍선(auroraTodos) 위에 입력창(topBox) 을 얹는다 */
@@ -514,6 +524,8 @@ public class Main extends Application {
     // 수다 상대는 파트너 한 명이고, 수다 화면 위 목록에서 딴 상대로 바꿀 수 있다 (ChatProfile). 나눈 수다는 상대마다 파일에 남겨서,
     // 껐다 켜도 하던 얘기가 그대로 있게 한다.
     chatPane = buildChat(stage, SettingsDialog.load());
+    // 없는 프사는 바로 받고, 오래된 건 가끔 갈아둔다
+    ChatAvatar.refreshAll(() -> chatPane.refreshMembers());
     // 언제 들렀는지 ChatPane 이 센다. 한참 뜸했으면 수다 화면에 안 들어와도 창을 부르는 것만으로
     // 상대가 먼저 말을 건다 (배지로 뜬다)
     stage.focusedProperty().addListener((obs, was, is) -> chatPane.widgetFocused(is));
@@ -533,25 +545,20 @@ public class Main extends Application {
         return;
       }
 
-      // 오로라에선 빈 입력창의 맨손 ← → ↓ 가 기본 위젯을 연다 (기본 위젯에선 목표 · 수다 · 메모로 가는 키).
-      // Alt 를 같이 누르면 기본 위젯 없이 곧장 목표 · 수다 · 메모로 (아래 평소 길) — 거기서 돌아오면 기본 위젯이다
-      if (auroraOn.get() && text.isEmpty() && !resultList.isVisible() && !e.isAltDown()
-          && (e.getCode() == KeyCode.LEFT || e.getCode() == KeyCode.RIGHT || e.getCode() == KeyCode.DOWN)) {
-        e.consume();
-        leaveAurora();
-        return;
-      }
-
       if (e.getCode() == KeyCode.LEFT && (e.isAltDown() || text.isEmpty())) {
         e.consume();
         showGoals(text);
         return;
       }
 
-      // 빈 입력창에서 맨손 ↓ : 메모장으로. 돌아오는 길은 메모장의 ↑ (NotepadPane 참고)
+      // 빈 입력창에서 맨손 ↓ : 메모장으로. 돌아오는 길은 메모장의 ↑ (NotepadPane 참고).
+      // 단축키로 오로라를 여는 설정이면 기본 위젯에선 오로라로 돌아가는 키다 — 메모장은 Alt+↓, 또는 오로라에서 ↓
       if (e.getCode() == KeyCode.DOWN && text.isEmpty() && !e.isAltDown() && !resultList.isVisible()) {
         e.consume();
-        showNotepad();
+        if (SettingsDialog.load().hotkeyAurora() && !auroraOn.get())
+          showAurora();
+        else
+          showNotepad();
         return;
       }
 
@@ -682,28 +689,29 @@ public class Main extends Application {
         // 메모장에선 ←/→ 로 딴 화면에 안 간다 — 돌아오는 길은 ↑ 하나
       } else {
         e.consume();
-        if (auroraOn.get() && !e.isAltDown())
-          leaveAurora();
-        else if (code == KeyCode.LEFT)
+        if (code == KeyCode.LEFT)
           showGoals("");
         else
           showChat();
       }
     });
 
+    // 오로라에서 기본 위젯으로 가는 길은 Alt+↑ 하나. 풍선을 만져 포커스가 입력창 밖에 있어도 되게 씬 필터로 받는다
+    scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+      if (e.getCode() == KeyCode.UP && e.isAltDown() && auroraOn.get()) {
+        e.consume();
+        leaveAurora();
+      }
+    });
+
     // F11 : 기본 화면 · 수다를 전체화면으로 켜고 끈다. 목표 맵 · 메모는 그 화면이 직접 받아서 크게 편다 (expand).
-    // 오로라에서 누르면 기본 위젯을 전체화면으로 연다
+    // 오로라는 이미 화면을 덮고 있어서 할 일이 없다
     scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
       if (e.getCode() != KeyCode.F11 || root.getCenter() == goalPane || root.getCenter() == notepadPane)
         return;
       e.consume();
-      if (auroraOn.get()) {
-        aurora = false;
-        setFullMode(true);
-        Platform.runLater(() -> Ime.focus(inputField));
-        return;
-      }
-      setFullMode(!fullMode);
+      if (!auroraOn.get())
+        setFullMode(!fullMode);
     });
 
     // Esc 안전망. 각 화면이 자기 안에서 먼저 받고(필터), 포커스가 화면 밖 —
@@ -834,15 +842,24 @@ public class Main extends Application {
     // 비우는 세로줄은 기본 마도카 너비까지만 — 옆으로 넓은 그림(왼쪽으로 넓게)이 서도
     // 수다 칸이 줄지 않게, 넘친 만큼은 그림이 말풍선 위로 살짝 덮는다. 배지는 실제 그림 옆에 선다
     double reserve = Math.min(width, EMPTY_MASCOT_WIDTH);
-    chatReserve = reserve + MASCOT_MARGIN;
-    // 전체화면 수다는 가운데에 서고 그림은 떠 있어서 비울 세로줄이 없다 (applyFull)
-    chatPane.reserveRight(mascotFloating ? 0 : chatReserve);
+    // 그림이 좁거나 없어도 오른쪽 탭 자리는 남긴다
+    chatReserve = Math.max(reserve, ChatPane.SIDE_MIN_WIDTH) + MASCOT_MARGIN;
+    chatBelow = (mascotHidden ? 0 : height) + MASCOT_MARGIN + CHAT_SIDE_GAP;
+    reserveChat(chatPane, mascotFloating);
     if (mascotFloating)
       chatPane.setMaxWidth(fullChatWidth());
     goalPane.reserveRight(reserve, height, MASCOT_MARGIN);
     notepadPane.reserveRight(reserve, height, MASCOT_MARGIN);
     StackPane.setMargin(badges, new Insets(
         0, width + MASCOT_MARGIN + BADGE_GAP, MASCOT_MARGIN + height * BADGE_RISE, 0));
+  }
+
+  /** 수다 화면의 오른쪽 세로줄을 비운다. 전체화면 수다는 가운데에 서고 그림은 떠 있어서 비울 세로줄이 없다 (applyFull) */
+  private void reserveChat(ChatPane pane, boolean floating) {
+    if (floating)
+      pane.reserveRight(0, 0, 0);
+    else
+      pane.reserveRight(chatReserve, MASCOT_MARGIN, chatBelow);
   }
 
   /**
@@ -927,6 +944,8 @@ public class Main extends Application {
     if (unreadBadge != null)
       unreadBadge.setVisible(!hide && !mascotCovered && unread > 0);
     showSplit(splitAt);
+    // 그림을 치우면 수다 화면 오른쪽 탭이 그 자리까지 내려온다
+    placeBeside(mascotView);
   }
 
   /** 목표 맵 · 메모를 크게 펴거나 접었을 때 (GoalPane / NotepadPane.setExpanded) — 전체화면도 같이 켜고 끈다 */
@@ -964,6 +983,13 @@ public class Main extends Application {
     Platform.runLater(() -> Ime.focus(inputField));
   }
 
+  /** 오로라를 띄운다 — 보던 화면이 딴 데였어도 기본 화면으로 돌아와 연다. 단축키로 오로라를 여는 설정에서만 부른다 */
+  private void showAurora() {
+    aurora = true;
+    fullMode = false;
+    showHome();
+  }
+
   /**
    * 지금 화면을 fullMode · aurora 에 맞춰 세운다. 화면을 갈아끼울 때마다도 부른다.
    *  - 오로라 (기본 화면에서만): 바탕은 투명하게 비우고 (.full-dim), 입력창만 가운데 빛 판(.full-glow)에 담아 띄운다.
@@ -976,10 +1002,11 @@ public class Main extends Application {
    */
   private void applyFull() {
     Node screen = root.getCenter();
-    // 오로라는 기본 화면에서만 — 딴 화면으로 가면 (Alt+← → ↓ 로 목표 · 수다 · 메모, 알림 누르기…) 끝나고,
-    // 거기서부턴 기본 위젯이다 (설정대로 전체화면이거나 창). 그 화면에서 돌아오면 기본 위젯 기본 화면이 선다
+    // 오로라는 기본 화면에서만 — 딴 화면으로 가면 (← → ↓ 로 목표 · 수다 · 메모, 알림 누르기…) 끝나고,
+    // 그 화면은 기본 위젯 그대로 선다 (설정대로 전체화면이거나 창). 거기서 돌아오면 오로라가 다시 뜬다 (showHome)
     if (!atHome() && aurora) {
       aurora = false;
+      backToAurora = true;
       fullMode = SettingsDialog.load().openFullScreen;
     }
     syncing = true;
@@ -1028,7 +1055,7 @@ public class Main extends Application {
     }
     mascotFloating = chat;
     chatPane.setMaxWidth(chat ? fullChatWidth() : Double.MAX_VALUE);
-    chatPane.reserveRight(chat ? 0 : chatReserve);
+    reserveChat(chatPane, chat);
     if (!chat) {
       mascotView.setTranslateX(0);
       mascotView.setTranslateY(0);
@@ -1039,8 +1066,48 @@ public class Main extends Application {
     hideMascot(mascotHidden);
     Stage stage = (Stage) root.getScene().getWindow();
     boolean cover = fullMode || home;
-    if (stage != null && stage.isShowing() && stage.isFullScreen() != cover)
-      stage.setFullScreen(cover);
+    if (stage == null || !stage.isShowing() || stage.isFullScreen() == cover)
+      return;
+    if (cover)
+      stage.setFullScreen(true);
+    else
+      leaveFullScreen(stage);
+  }
+
+  /**
+   * 전체화면을 푼다. 투명 창은 전체화면이 풀리는 사이 판이 왼쪽 위로 튀었다가 제자리로 오는 게 보여서,
+   * 창을 먼저 안 보이게 지우고 풀고, 작은 창이 제자리에 그려진 뒤에 다시 보인다.
+   * 투명 창의 불투명도는 다음 그림부터 먹으니 풀기 전에 몇 프레임 기다린다.
+   * 그 사이 도로 전체화면을 쓰게 됐으면 (fullMode · aurora) 풀지 않고 보이기만 한다
+   */
+  private void leaveFullScreen(Stage stage) {
+    if (leavingFull)
+      return;
+    leavingFull = true;
+    stage.setOpacity(0);
+    afterFrames(2, () -> {
+      if (stage.isShowing() && !fullMode && !aurora)
+        stage.setFullScreen(false);
+      afterFrames(3, () -> {
+        leavingFull = false;
+        stage.setOpacity(1);
+      });
+    });
+  }
+
+  /** frames 번째 프레임에서 action 을 돌린다 */
+  private static void afterFrames(int frames, Runnable action) {
+    new AnimationTimer() {
+      private int count;
+
+      @Override
+      public void handle(long now) {
+        if (++count < frames)
+          return;
+        stop();
+        action.run();
+      }
+    }.start();
   }
 
   /**
@@ -1106,7 +1173,6 @@ public class Main extends Application {
       view.setTranslateX(Math.max(-view.getLayoutX(), Math.min(box.getWidth() - w - view.getLayoutX(), x)));
       view.setTranslateY(Math.max(-view.getLayoutY(), Math.min(box.getHeight() - h - view.getLayoutY(), y)));
     });
-    // 수다 화면 안에서 누르면 들어갈 데가 없으니, 대신 지운 지난 대화 목록을 띄운다
     view.setOnMouseClicked(e -> {
       // 끌어 옮긴 건 누른 게 아니다
       if (!e.isStillSincePress())
@@ -1119,13 +1185,9 @@ public class Main extends Application {
       }
       if (e.getButton() != MouseButton.PRIMARY)
         return;
-      if (root.getCenter() == chatPane) {
-        ChatArchiveDialog.show(stage, chatPane.archive(), chatPane.name(), chatPane.noteSingleClick(), chatPane.likingEmojis(),
-            chatPane.reasonRevealed());
-        Platform.runLater(() -> Ime.focus(chatPane.input()));
-      } else {
+      // 수다 화면 안에선 들어갈 데가 없다 — 지난 대화는 오른쪽 탭에서 본다
+      if (root.getCenter() != chatPane)
         showChat();
-      }
     });
     return view;
   }
@@ -1140,6 +1202,12 @@ public class Main extends Application {
     inputField.clear();
     hideResults();
     focusTarget = inputField;
+    // 오로라에서 나갔던 화면이면 오로라로 돌아온다 — 나가 있는 동안 설정을 기본 위젯으로 바꿨으면 그대로 기본 위젯
+    if (backToAurora && SettingsDialog.load().hotkeyAurora()) {
+      aurora = true;
+      fullMode = false;
+    }
+    backToAurora = false;
     // 크게 펴둔 목표 맵 · 메모는 접히고, 전체화면이면 기본 화면도 전체화면으로, 오로라면 오로라로 선다
     applyFull();
     Platform.runLater(() -> Ime.focus(inputField));
@@ -1523,8 +1591,11 @@ public class Main extends Application {
     switchChat(stage);
     // 색 테마와 투명도는 창에서 고르는 동안 이미 걸려 있다 — 글꼴은 저장해야 바뀌니 한 번 더 건다
     SettingsDialog.applyStyle(stage.getScene(), settings.widgetOpacity, settings.widgetTheme);
-    // 오로라에 할 일을 띄울지가 바뀌었을 수 있다
-    applyFull();
+    // 기본 위젯을 골랐으면 오로라는 안 쓴다. 그대로면 오로라에 할 일을 띄울지가 바뀌었을 수 있다
+    if (aurora && !settings.hotkeyAurora())
+      leaveAurora();
+    else
+      applyFull();
     if (!settings.scanRoots.equals(rootsBefore)) {
       scanFolders(settings);
       return;
@@ -1559,7 +1630,7 @@ public class Main extends Application {
     pane.setNoteOptions(settings.secretNotes, settings.noteSingleClick);
     pane.setTypingDelay(settings.typingDelay, settings.typingMsPerByte);
     if (chatReserve >= 0)
-      pane.reserveRight(chatReserve);
+      reserveChat(pane, false);
     // 수다에 "할 일" 얘기가 나오거나 오늘 할 일 하나를 콕 집어 말하면 상대가 오늘 할 일을 보고 답한다 (ChatPane.withTodos)
     pane.setTodoSource(() -> {
       List<ChatPane.TodoLine> todos = new ArrayList<>();
@@ -1708,10 +1779,8 @@ public class Main extends Application {
     if (reopened) {
       SettingsDialog settings = SettingsDialog.load();
       if (settings.hotkeyAurora()) {
-        // 단축키로 열 화면이 오로라면 열 때마다 오로라로 — 보던 화면이 딴 데였어도 기본 화면으로 돌아와 연다
-        aurora = true;
-        fullMode = false;
-        showHome();
+        // 단축키로 열 화면이 오로라면 열 때마다 오로라로
+        showAurora();
       } else if (aurora) {
         // 오로라로 열다 설정을 바꿨으면 기본 위젯으로
         leaveAurora();
