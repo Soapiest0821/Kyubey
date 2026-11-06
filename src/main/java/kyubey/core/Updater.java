@@ -166,12 +166,40 @@ public final class Updater {
     try {
       Path log = msi.resolveSibling("install.log");
       String args = "/i \"" + msi + "\" /passive /norestart /l*v \"" + log + "\"";
-      afterExit("Start-Process msiexec.exe -Wait -ArgumentList " + quote(args) + "\n");
+      afterExit(closeOthers(appPath()) + installScript(args, release.version()));
       System.exit(0);
     } catch (IOException e) {
       System.err.println("[update] 설치 시작 실패: " + e);
       Notice.warn(parent, "설치를 시작하지 못했어.\n" + e.getMessage());
     }
+  }
+
+  /**
+   * 설치 전에 같은 실행 파일로 뜬 앱을 모두 끈다. 숨겨 둔 앱이 하나라도 남으면 런타임 파일을
+   * 쥐고 있어서 MSI 가 오류 1304 로 실패하고, 기존 설치까지 망가진다.
+   */
+  static String closeOthers(String exe) {
+    String running = "Get-Process -Name " + quote(processName(exe)) + " -ErrorAction SilentlyContinue"
+        + " | Where-Object { $_.Path -eq " + quote(exe) + " }";
+    return running + " | Stop-Process -Force -ErrorAction SilentlyContinue\n"
+        + "$deadline = (Get-Date).AddSeconds(15)\n"
+        + "while ((" + running + ") -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }\n";
+  }
+
+  private static String processName(String exe) {
+    String name = Path.of(exe).getFileName().toString();
+    return name.toLowerCase(Locale.ROOT).endsWith(".exe") ? name.substring(0, name.length() - 4) : name;
+  }
+
+  /** 설치가 실패하면 앱이 사라져 있을 수 있으니, 아무 말 없이 끝내지 않고 알린다 */
+  private static String installScript(String args, String version) {
+    String message = "Makeit " + version + " 설치에 실패했어.\n"
+        + "GitHub Release 에서 MSI 를 받아 직접 설치해 줘. 대화와 설정은 그대로 남아 있어.";
+    return "$install = Start-Process msiexec.exe -Wait -PassThru -ArgumentList " + quote(args) + "\n"
+        + "if ($install.ExitCode -notin 0, 3010) {\n"
+        + "  Add-Type -AssemblyName PresentationFramework\n"
+        + "  [void][System.Windows.MessageBox]::Show(" + quote(message) + ", 'Makeit')\n"
+        + "}\n";
   }
 
   /** /restart — 이 프로세스가 끝나면 앱을 다시 켠다. 부른 쪽이 곧바로 종료해야 한다 */
