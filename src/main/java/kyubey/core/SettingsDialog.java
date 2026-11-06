@@ -92,7 +92,7 @@ public final class SettingsDialog {
   private static final String STYLE = "/style/style.css";
 
   /** 아무것도 안 골랐을 때 서는 그림 */
-  private static final String DEFAULT_MASCOT = "/img/마케몬.png";
+  private static final String DEFAULT_MASCOT = "/img/코하쿠.png";
 
   /** 그림을 세우는 키 */
   public static final double MASCOT_HEIGHT = 170;
@@ -125,8 +125,9 @@ public final class SettingsDialog {
     List<String> pink = List.of("#ff69a0", "#ff9cc2", "#e05a8a", "#c86bd6", "#ffb36b", "#f27a8f");
     List<String> gray = List.of("#4b505a", "#7a808c", "#5f6b7d", "#9399a4", "#3a3f47", "#6e7480");
     TODO_THEMES.put(Theme.PINK, pink);
-    TODO_THEMES.put(Theme.YELLOW, List.of("#f2b51e", "#ffcf5c", "#e08a1e", "#c9a227", "#ffb347", "#d98e04"));
-    TODO_THEMES.put(Theme.SKY, List.of("#4a90d9", "#7cc0f0", "#2f6fb5", "#8fa8f0", "#4fb8cf", "#6a7fd0"));
+    TODO_THEMES.put(Theme.PURPLE, List.of("#8e5ad6", "#b793ec", "#6a35b0", "#5f8ae0", "#d07be0", "#7a6fd8"));
+    TODO_THEMES.put(Theme.RED, List.of("#e04040", "#f08080", "#b02020", "#ff8a4a", "#e0658a", "#c95a3a"));
+    TODO_THEMES.put(Theme.WHITE, gray);
     TODO_THEMES.put(Theme.PASTEL, List.of("#9fd88a", "#ffd36e", "#ffa8b8", "#9cc9f0", "#c6aef0", "#ffbf94"));
     TODO_THEMES.put(Theme.GRAY, gray);
     TODO_THEMES.put(Theme.GRAY_GRADIENT, gray);
@@ -789,7 +790,7 @@ public final class SettingsDialog {
     String originalTheme = settings.widgetTheme;
     ToggleGroup themeGroup = new ToggleGroup();
     FlowPane themeRow = new FlowPane(6, 6);
-    for (Theme t : Theme.values())
+    for (Theme t : Theme.CHOICES)
       themeRow.getChildren().add(toggle(themeGroup, t.label, t, t == Theme.of(settings.widgetTheme)));
 
     // ── 파트너 ── 캐릭터 탭 맨 위. 처음엔 없음이고, 고르면 위젯 색 테마도 그 상대 색으로 바로 바뀐다.
@@ -1295,7 +1296,7 @@ public final class SettingsDialog {
 
   private static Theme pickedTheme(ToggleGroup group) {
     var picked = group.getSelectedToggle();
-    return picked == null ? Theme.DEFAULT : (Theme) picked.getUserData();
+    return picked == null ? Theme.CHOICES.get(0) : (Theme) picked.getUserData();
   }
 
   /** 파트너 "없음" 알약에 다는 표 */

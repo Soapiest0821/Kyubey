@@ -1093,7 +1093,7 @@ public class GoalPane extends HBox {
     }
     if (node == current.root) {
       int choice = Notice.ask(getScene().getWindow(),
-          "「" + node.title + "」 목표를 통째로 지울게.\n쪼갠 칸이랑 마케몬이랑 나눈 말도 같이 사라져.", "지우기", "취소");
+          "「" + node.title + "」 목표를 통째로 지울게.\n쪼갠 칸이랑 코하쿠랑 나눈 말도 같이 사라져.", "지우기", "취소");
       if (choice != 0)
         return;
       removeCurrentGoal();

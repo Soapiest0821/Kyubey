@@ -126,8 +126,9 @@ final class WebPicture {
       [사진 보내기]
       사진을 달라는 말이면("셀카 찍었어?"도) 답 끝에 표시 하나를 달아. 없으면 사진이 안 가. 장난이나 사진 얘기뿐이면 달지 마.
       - 실물: [[사진:영어 2~5단어|한글 설명]] 맨 앞은 대상 명사. 예: capybara swimming water
-      - 네 사진(셀카 포함)이나 캐릭터 그림은 없어. 표시 없이 네 말투로 넘겨.
-      - "더 줘"는 앞 사진과 비슷한 걸로. 야한 그림은 표시 없이 네 말투로 넘겨. 앱, 검색, 만화 얘기는 꺼내지 마.
+      - 너(셀카 포함), 마케몬 캐릭터: [[그림:태그|한글 설명]] 맨 앞은 캐릭터 태그. 예: {나}
+        태그: kohaku_(makemon!) devilun_(makemon!)
+      - "더 줘"는 앞 사진과 비슷한 걸로. 다른 작품이나 야한 그림은 표시 없이 네 말투로 넘겨. 앱, 검색, 만화 얘기는 꺼내지 마.
       """;
 
   /**
@@ -166,20 +167,16 @@ final class WebPicture {
    * 마도카 상위 100장 중 11장이 분홍 머리가 아니었다. 한 명만 찾을 땐 머리색까지 맞아야 한다 (artSearch).
    * 쿄코는 머리색 태그까지 걸면 한두 장만 남아서 뺐다.
    */
-  private static final Map<String, String> HAIR = Map.of(
-      "kaname_madoka", "pink_hair",
-      "tomoe_mami", "blonde_hair",
-      "miki_sayaka", "blue_hair",
-      "akemi_homura", "black_hair");
+  private static final Map<String, String> HAIR = Map.of();
 
   /** 머리색 없이 찾는 등장인물 */
-  private static final Set<String> OTHERS = Set.of("sakura_kyouko", "kyubey");
+  private static final Set<String> OTHERS = Set.of("kohaku_(makemon!)", "devilun_(makemon!)");
 
   /**
    * 작품 태그. 모든 그림 검색에 넣고 응답에서도 본다. 캐릭터 태그는 98% 넘게 이 태그가 함께 달려 있어 놓치는 게 거의 없다.
    * 모델이 캐릭터 태그를 빼먹거나 한글로 적으면 남은 태그만으로 찾아서 딴 작품 그림이 왔다 — 호무라 사진에 원신이 온 적이 있다.
    */
-  private static final String WORK = "mahou_shoujo_madoka_magica";
+  private static final String WORK = "makemon!";
 
   /** 캐릭터 태그 하나만 믿지 않게 태그는 이만큼만 받는다 */
   private static final int MAX_TAGS = 3;
@@ -229,7 +226,7 @@ final class WebPicture {
   /** 이 상대의 그림 태그 */
   private static String characterTag(ChatProfile who) {
     return switch (who) {
-      case MAKEMON -> "";
+      case MAKEMON -> "kohaku_(makemon!)";
     };
   }
 
@@ -311,24 +308,29 @@ final class WebPicture {
     return find(search.substring(ART_MARK.length()), art, dir, sent, who);
   }
 
-  /** 프사로는 못 쓰는 그림 — 스케치 · 흑백은 작게 줄이면 뭉개지고, 뒷모습 · 옆모습은 얼굴이 안 보인다 */
-  private static final String AVATAR_SKIP = " -sketch -traditional_media -monochrome -greyscale -lineart -from_behind -profile";
-
   /**
    * 프로필 사진으로 쓸 이 상대의 얼굴 그림을 한 장 받는다 (ChatAvatar). 없으면 null.
    * portrait 라 artSearch 가 혼자 나온 그림, 맞는 머리색, 눈을 맞춘 그림으로 좁혀준다.
    * 네트워크를 타니 JavaFX 스레드에서 부르지 말 것.
    */
   static String avatar(ChatProfile who, String dir, Set<String> sent) throws IOException, InterruptedException {
-    return find(characterTag(who) + " portrait" + AVATAR_SKIP, true, dir, sent, who);
+    return find(characterTag(who) + " solo", true, dir, sent, who);
   }
 
   /** 맞는 사진을 한 장 받아 저장하고 파일 자리를 돌려준다. 없으면 null */
   private static String find(String query, boolean art, String dir, Set<String> sent, ChatProfile who)
       throws IOException, InterruptedException {
-    // Makeit 캐릭터는 검색할 그림 태그가 아직 없다. 찾으면 작품 태그(WORK) 때문에 마도카 그림이 온다
-    if (art)
-      return null;
+    String path = findOnce(query, art, dir, sent, who);
+    // 코하쿠 그림은 몇 장 안 돼서 금방 다 보낸다. 다 보냈으면 처음부터 다시 돌려 쓴다
+    if (path == null && art && !sent.isEmpty()) {
+      sent.clear();
+      path = findOnce(query, art, dir, sent, who);
+    }
+    return path;
+  }
+
+  private static String findOnce(String query, boolean art, String dir, Set<String> sent, ChatProfile who)
+      throws IOException, InterruptedException {
     String words = query;
     for (int round = 0; round <= LOOSEN; round++) {
       List<Candidate> found = art ? searchArt(words, sent, who) : search(words, sent);
@@ -413,8 +415,6 @@ final class WebPicture {
     words.add(1, WORK);
     if (cast > 1)
       return String.join(" ", words);
-    if (!words.contains("solo"))
-      words.add("solo");
     words.stream().map(HAIR::get).filter(Objects::nonNull).findFirst().ifPresent(words::add);
     // 얼굴을 달라는 말인데 portrait 만으론 눈을 가린 그림이나 추상화도 와서, 눈을 맞춘 그림으로 좁힌다
     if (words.contains("portrait"))

@@ -21,7 +21,7 @@ import java.nio.file.Files;
  */
 public enum ChatProfile {
 
-  MAKEMON("yellow", "마케몬", "#f5b82e");
+  MAKEMON("yellow", "코하쿠", "#8e5ad6");
 
   /** 아직 파트너를 안 골랐을 때 얘기하는 상대 — 회색 테마 */
   public static final ChatProfile DEFAULT = MAKEMON;
@@ -40,6 +40,8 @@ public enum ChatProfile {
     this.defaultName = defaultName;
     this.banner = banner;
   }
+
+  /** id 는 데이터 폴더 이름(partners/yellow)이라 바꾸지 않는다. 위젯 색은 Theme.of 가 정한다 */
 
   /** 모르는 이름이나 null 이면 null */
   public static ChatProfile of(String id) {

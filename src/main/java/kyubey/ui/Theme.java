@@ -1,6 +1,7 @@
 package kyubey.ui;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,55 +38,63 @@ public enum Theme {
       "#ffe4f0", "#eceef1",
       "#e0136f", "#2f3440"), null),
 
-  SKY("sky", "하늘", remap(
-      "255, 181, 217", "176, 214, 245",
-      "255, 105, 160", "74, 144, 217",
-      "154, 96, 125", "90, 125, 160",
-      "122, 85, 102", "60, 85, 110",
-      "#ff69a0", "#4a90d9",
-      "#ff85b3", "#6aa6e3",
-      "#4a2c3a", "#23384d",
-      "#7a5566", "#50657a",
-      "#3a1f2c", "#182a3c",
-      "#b32b5e", "#2a6aa8",
-      "#9b7383", "#7d8fa3",
-      "#c2557f", "#3d7fc2",
-      "#d6417f", "#3478c0",
-      "#c86bd6", "#7b8fe0",
-      "#ffe3ef", "#e3f0fc",
-      "#fff0f6", "#f0f7fe",
-      "#ffd2e6", "#d2e8ff",
-      "#ffe4f0", "#e4f1ff",
-      "#e0136f", "#1559a8"), null),
+  PURPLE("purple", "보라", remap(
+      "255, 181, 217", "214, 190, 245",
+      "255, 105, 160", "142, 90, 214",
+      "154, 96, 125", "125, 100, 165",
+      "122, 85, 102", "95, 75, 125",
+      "#ff69a0", "#8e5ad6",
+      "#ff85b3", "#a67be3",
+      "#4a2c3a", "#372a4d",
+      "#7a5566", "#665a7d",
+      "#3a1f2c", "#281d3b",
+      "#b32b5e", "#6a35b0",
+      "#9b7383", "#8a7ca3",
+      "#c2557f", "#7a48c4",
+      "#d6417f", "#7239c7",
+      "#c86bd6", "#5f8ae0",
+      "#ffe3ef", "#efe4fb",
+      "#fff0f6", "#f7f1fd",
+      "#ffd2e6", "#e4d3f8",
+      "#ffe4f0", "#f0e6fb",
+      "#e0136f", "#7b1fd1"), null),
 
-  YELLOW("yellow", "노랑", remap(
-      "255, 181, 217", "255, 224, 140",
-      "255, 105, 160", "240, 176, 20",
-      "154, 96, 125", "160, 125, 50",
-      "122, 85, 102", "120, 95, 40",
-      "#ff69a0", "#f5b82e",
-      "#ff85b3", "#f8c95a",
-      "#4a2c3a", "#4a3a1a",
-      "#7a5566", "#7a6640",
-      "#3a1f2c", "#33270d",
-      "#b32b5e", "#a8700a",
-      "#9b7383", "#9b8a63",
-      "#c2557f", "#c98a12",
-      "#d6417f", "#c47f08",
-      "#c86bd6", "#ffa04a",
-      "#ffe3ef", "#fff3cc",
-      "#fff0f6", "#fff9e6",
-      "#ffd2e6", "#ffe9a8",
-      "#ffe4f0", "#fff4d1",
-      "#e0136f", "#d9480f"), """
-      /* 노란 바탕에 흰 글씨는 안 읽혀서, 노랑을 칠한 자리의 글씨만 진한 갈색으로 */
-      .chat-theirs, .dialog-button-primary, .llm-mode:selected, .goal-chip:selected,
-      .goal-chip.goal-chip-done, .goal-chip.goal-chip-done:selected,
-      .unread-badge, .list-cell:filled:selected, .chat-note {
-          -fx-text-fill: #4a3410;
+  RED("red", "빨강", remap(
+      "255, 181, 217", "250, 180, 180",
+      "255, 105, 160", "222, 60, 60",
+      "154, 96, 125", "155, 90, 90",
+      "122, 85, 102", "120, 70, 70",
+      "#ff69a0", "#e04040",
+      "#ff85b3", "#e96a6a",
+      "#4a2c3a", "#4a2222",
+      "#7a5566", "#7a4f4f",
+      "#3a1f2c", "#3a1616",
+      "#b32b5e", "#b02020",
+      "#9b7383", "#9b7070",
+      "#c2557f", "#c83a3a",
+      "#d6417f", "#cf2f2f",
+      "#c86bd6", "#ff8a4a",
+      "#ffe3ef", "#fde3e3",
+      "#fff0f6", "#fff1f1",
+      "#ffd2e6", "#fcd2d2",
+      "#ffe4f0", "#fde4e4",
+      "#e0136f", "#c81010"), null),
+
+  /** 흰 바탕 — 글씨와 단추는 회색 테마 색을 쓰고 바탕만 희게 */
+  WHITE("white", "흰색", GRAY.colors, """
+      .widget-root, .dialog-root {
+          -fx-background-color: rgba(255, 255, 255, 0.72);
+          -fx-border-color: rgba(210, 214, 222, 0.9);
       }
-      .chat-theirs .chat-text {
-          -fx-fill: #4a3410;
+      .dialog-root-drop {
+          -fx-background-color: rgba(255, 255, 255, 0.9);
+      }
+      .notice-root {
+          -fx-background-color: rgba(255, 255, 255, 0.96);
+      }
+      .list-view {
+          -fx-background-color: rgba(255, 255, 255, 0.45);
+          -fx-border-color: rgba(210, 214, 222, 0.8);
       }
       """),
 
@@ -156,7 +165,11 @@ public enum Theme {
       }
       """);
 
+  /** style.css 원본 그대로인 테마. 스타일 계산의 기준이라 고르는 목록엔 없다 */
   public static final Theme DEFAULT = PINK;
+
+  /** 설정 창에서 고르는 테마. 맨 앞이 처음 켰을 때의 색이다 */
+  public static final List<Theme> CHOICES = List.of(PURPLE, RED, WHITE, PASTEL, GRAY_GRADIENT);
 
   /** 차례로 돌려 칠하는 색 칸 수 — cycle-0 … cycle-(CYCLE-1). 그 색을 정해둔 테마(파스텔)에서만 먹는다 */
   public static final int CYCLE = 6;
@@ -198,12 +211,12 @@ public enum Theme {
             Pattern.CASE_INSENSITIVE);
   }
 
-  /** 모르는 이름이나 null 이면 기본(핑크) */
+  /** 고를 수 없는 이름(예전 테마 포함)이나 null 이면 맨 앞 테마 */
   public static Theme of(String id) {
-    for (Theme t : values())
+    for (Theme t : CHOICES)
       if (t.id.equals(id))
         return t;
-    return DEFAULT;
+    return CHOICES.get(0);
   }
 
   /** style.css 원본에 이 테마 색을 입힌 사본 */
