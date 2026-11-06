@@ -374,8 +374,7 @@ public class ChatPane extends BorderPane {
       "있잖아\n나 좀 심심해",
       "아직 거기 있지?");
 
-  /** 처음 열었을 때 한 줄. 지난 대화가 남아 있으면 안 한다 (켤 때마다 인사가 쌓여서) */
-  private static final String GREETING = "안녕~ 왔구나?";
+  /** 처음 열었을 때 한 줄의 기본값은 ChatProfile.defaultGreeting. 지난 대화가 남아 있으면 안 한다 (켤 때마다 인사가 쌓여서) */
 
   /** 입력칸 위에 올려둔 사진의 높이 */
   private static final double ATTACH_THUMB = 56;
@@ -526,6 +525,8 @@ public class ChatPane extends BorderPane {
 
   /** 손으로 고쳐 쓴 할 일 칭찬 안내문. 비었으면 기본값(TODO_PRAISE)이 간다 */
   private String customPraise = "";
+  /** 손으로 고쳐 쓴 시작 멘트. 비었으면 상대의 기본 멘트가 간다 */
+  private String customGreeting = "";
 
   /** 마도카가 나한테 품은 호감도. 답마다 몰래 단 표시로 오르내린다 (takeAffection) */
   private int liking;
@@ -811,6 +812,7 @@ public class ChatPane extends BorderPane {
     customNudge = written.nudge;
     customTodo = written.todo;
     customPraise = written.praise;
+    customGreeting = written.greeting;
 
     Presence.Snapshot seen = presence.load();
     readAt = seen.readAt;
@@ -1030,7 +1032,7 @@ public class ChatPane extends BorderPane {
     ChatAvatar.refresh(profile, side::refreshMembers);
     if (!greeted) {
       greeted = true;
-      addLine(GREETING, false);
+      addLine(fill(greeting()), false);
     }
     // 나가 있는 사이에 붙은 말은 화면 밖에서 그려졌다. 그때 내려둔 자리는 씬이 없어서
     // 안 먹혔을 수 있으니, 들어오는 김에 한 번 더 내려 마지막 말이 눈앞에 오게 한다.
@@ -1276,6 +1278,7 @@ public class ChatPane extends BorderPane {
     snapshot.nudge = customNudge;
     snapshot.todo = customTodo;
     snapshot.praise = customPraise;
+    snapshot.greeting = customGreeting;
     prompt.save(snapshot);
   }
 
@@ -1339,6 +1342,21 @@ public class ChatPane extends BorderPane {
   /** 마도카 말이 붙을 때마다 불린다. 띄울지 말지(창을 보고 있는지)는 받는 쪽이 고른다 */
   public void setOnMadoka(Consumer<String> listener) {
     onMadoka = listener;
+  }
+
+  /** 지금 쓰는 시작 멘트 ({이름} 은 그대로) — 고쳐 쓴 게 없으면 이 상대의 기본 멘트 */
+  public String greeting() {
+    return customGreeting.isBlank() ? defaultGreeting() : customGreeting;
+  }
+
+  public String defaultGreeting() {
+    return profile.defaultGreeting();
+  }
+
+  /** 시작 멘트를 갈아끼운다. 대화가 빈 상대를 처음 열 때부터 먹는다 */
+  public void setGreeting(String text) {
+    customGreeting = customized(text, defaultGreeting());
+    savePrompt();
   }
 
   public String nudgeGuide() {

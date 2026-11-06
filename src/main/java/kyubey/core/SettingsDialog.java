@@ -109,7 +109,7 @@ public final class SettingsDialog {
    * 1 위는 알파를 1 쪽으로 끌어올려서 MAX_OPACITY 에서 완전 불투명이 된다.
    * 창째로 흐리게 하면 글씨와 마도카까지 흐려져서 바탕만 건드린다.
    */
-  public static final double DEFAULT_OPACITY = 1.0;
+  public static final double DEFAULT_OPACITY = 1.8;
   /** 전체화면 설정 창 크기 — 화면이 작으면 화면에 맞춰 줄인다 */
   private static final double FULL_WIDTH = 1400;
   private static final double FULL_HEIGHT = 820;

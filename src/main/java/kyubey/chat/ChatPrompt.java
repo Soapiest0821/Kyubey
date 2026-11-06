@@ -35,6 +35,8 @@ public class ChatPrompt {
     public String todo = "";
     /** 고쳐 쓴 할 일 칭찬 안내문. 비었으면 기본값을 쓴다 */
     public String praise = "";
+    /** 고쳐 쓴 시작 멘트. 비었으면 기본값을 쓴다 */
+    public String greeting = "";
 
     /** Jackson 이 쓰는 빈 생성자 */
     public Snapshot() {
@@ -74,6 +76,8 @@ public class ChatPrompt {
         loaded.todo = "";
       if (loaded.praise == null)
         loaded.praise = "";
+      if (loaded.greeting == null)
+        loaded.greeting = "";
       return loaded;
     } catch (IOException e) {
       e.printStackTrace();

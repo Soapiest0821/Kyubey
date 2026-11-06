@@ -1532,7 +1532,7 @@ public class Main extends Application {
         }
       }
       // 저장하면 다음 답변부터 바로 먹는다. 취소하면 아무 일도 없다.
-      case CHAT_PROMPT -> {
+      case CHAT_PROMPT, PROMPT -> {
         if (PromptDialog.show(stage, chatPane))
           inputField.setPromptText(chatPane.name() + " 성격 바꿔뒀어!");
       }

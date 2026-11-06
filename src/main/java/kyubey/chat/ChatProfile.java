@@ -88,6 +88,11 @@ public enum ChatProfile {
     }
   }
 
+  /** 대화가 빈 상대를 처음 열 때 하는 기본 첫마디. 프롬프트 창에서 고칠 수 있다 */
+  public String defaultGreeting() {
+    return "안녕하모~ 왔모?";
+  }
+
   /** 기본 성격문. {이름} 은 부를 때 이 상대 이름으로 채워진다 (ChatPane.fill) */
   public String defaultPersona() {
     return """

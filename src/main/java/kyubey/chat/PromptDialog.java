@@ -71,6 +71,7 @@ public final class PromptDialog {
     name.getStyleClass().add("dialog-textfield");
     name.setPromptText(chat.profile().defaultName);
 
+    TextArea greeting = area(chat.greeting(), 2);
     TextArea area = area(chat.prompt(), 9);
     TextArea nudge = area(chat.nudgeGuide(), 7);
     TextArea todo = area(chat.todoGuide(), 4);
@@ -79,6 +80,7 @@ public final class PromptDialog {
     boolean[] saved = { false };
     Runnable save = () -> {
       chat.setName(name.getText());
+      chat.setGreeting(greeting.getText());
       chat.setPrompt(area.getText());
       chat.setNudgeGuide(nudge.getText());
       chat.setTodoGuide(todo.getText());
@@ -102,6 +104,10 @@ public final class PromptDialog {
     nameHead.setAlignment(Pos.CENTER_LEFT);
     VBox nameBox = new VBox(6, nameHead, name);
 
+    Label greetingHint = new Label("대화가 빈 상대를 처음 열 때 하는 첫마디야 · {이름} 자리는 상대 이름으로 채워져");
+    greetingHint.getStyleClass().add("dialog-path-label");
+    greetingHint.setWrapText(true);
+    VBox greetingBox = section("시작 멘트", greeting, chat.defaultGreeting(), greetingHint);
     VBox personaBox = section("성격문", area, chat.defaultPersona(), null);
     VBox nudgeBox = section("먼저 말 걸 때 안내문", nudge, ChatPane.NUDGE, nudgeHint);
 
@@ -127,7 +133,7 @@ public final class PromptDialog {
     buttons.setAlignment(Pos.CENTER_RIGHT);
 
     // 칸이 넷이라 작은 화면에선 창이 아래로 넘친다 — 칸들만 굴리고 제목·단추는 붙박아둔다
-    VBox sections = new VBox(12, nameBox, personaBox, nudgeBox, todoBox, praiseBox);
+    VBox sections = new VBox(12, nameBox, greetingBox, personaBox, nudgeBox, todoBox, praiseBox);
     sections.setPadding(new Insets(0, 6, 0, 0));
     ScrollPane scroll = new ScrollPane(sections);
     scroll.getStyleClass().add("keys-scroll");

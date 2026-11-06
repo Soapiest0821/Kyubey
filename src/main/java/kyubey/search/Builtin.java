@@ -44,10 +44,12 @@ public enum Builtin {
   // 많이 쓴 검색어 랭킹. 슬래시로만 부른다 — 그냥 "to" 만 쳐도 todo 옆에 끼어들면 성가셔서
   TOP("top", "많이 쓴 검색어 랭킹"),
   // 루트의 PATCHNOTES.md 를 창에 띄운다. 이것도 슬래시로만
-  PATCH("patch", "패치 노트");
+  PATCH("patch", "패치 노트"),
+  // "채팅 프롬프트" 와 같은 창을 슬래시로 바로 여는 길
+  PROMPT("prompt", "채팅 상대 이름 · 시작 멘트 · 성격 고치기");
 
   /** "/" 로 시작하게 쳤을 때 목록에 오르는 명령어들 (Resolver.matchSlash) */
-  public static final List<Builtin> SLASH = List.of(TOP, PATCH, TODO, KEYS, SETTINGS, RESTART);
+  public static final List<Builtin> SLASH = List.of(TOP, PATCH, PROMPT, TODO, KEYS, SETTINGS, RESTART);
 
   private final String keyword;
   private final String label;
@@ -108,7 +110,7 @@ public enum Builtin {
 
   /** 슬래시로만 부르는 명령어 — 그냥 쳐선 목록에 안 오른다 */
   public boolean slashOnly() {
-    return this == TOP || this == PATCH;
+    return this == TOP || this == PATCH || this == PROMPT;
   }
 
   /** 슬래시 목록에 올릴 항목 하나. Tab 이면 "/top" 처럼 슬래시째 채운다 */

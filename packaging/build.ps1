@@ -55,6 +55,7 @@ if ($Type -eq 'msi') {
     '--win-per-user-install',
     '--win-menu',
     '--win-shortcut',
+    '--win-shortcut-prompt',
     '--install-dir', 'Makeit'
   )
 }
