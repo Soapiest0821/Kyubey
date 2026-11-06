@@ -1,11 +1,11 @@
 package kyubey.chat;
 
+import kyubey.core.AppPaths;
 import kyubey.ui.Theme;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.Map;
 
 /**
  * 수다 상대 한 명. 이름, 나눈 얘기, 접어둔 기억, 프롬프트, 언제 들렀는지, 호감도가
@@ -21,15 +21,12 @@ import java.util.Map;
  */
 public enum ChatProfile {
 
-  MADOKA("pink", "마도카", "#ff69a0"),
-  MAMI("yellow", "마미", "#f5b82e"),
-  SAYAKA("sky", "사야카", "#4a90d9"),
-  HOMURA("gray", "호무라", "#7b5ea7");
+  MAKEMON("yellow", "마케몬", "#f5b82e");
 
   /** 아직 파트너를 안 골랐을 때 얘기하는 상대 — 회색 테마 */
-  public static final ChatProfile DEFAULT = HOMURA;
+  public static final ChatProfile DEFAULT = MAKEMON;
 
-  private static final String ROOT = "src/main/resources/json/";
+  private static final String ROOT = AppPaths.JSON;
 
   /** 파일 자리 이름 (테마 id 와 같다). settings.json 의 partner · chatPartner 에도 이게 남는다 */
   public final String id;
@@ -62,16 +59,7 @@ public enum ChatProfile {
    * 파스텔이면 그때 수다 화면에서 고른 상대 (pastelPick, 없으면 마도카)
    */
   public static ChatProfile forTheme(Theme theme, String pastelPick) {
-    return switch (theme) {
-      case PINK -> MADOKA;
-      case YELLOW -> MAMI;
-      case SKY -> SAYAKA;
-      case GRAY, GRAY_GRADIENT -> HOMURA;
-      case PASTEL -> {
-        ChatProfile picked = of(pastelPick);
-        yield picked == null ? MADOKA : picked;
-      }
-    };
+    return MAKEMON;
   }
 
   /** 이 상대의 파일 하나가 놓일 자리 (name 은 "chat.json" 처럼) */
@@ -79,18 +67,12 @@ public enum ChatProfile {
     return ROOT + "partners/" + id + "/" + name;
   }
 
-  /** 마도카가 예전에 json/ 바로 밑에 두던 것들 → 제 폴더 안 이름. 지운 대화 폴더는 이름도 바뀌었다 (ChatArchive.DIR) */
-  private static final Map<String, String> MADOKA_OLD_FILES = Map.of(
-      "chat.json", "chat.json", "chats", ChatArchive.DIR, "memo.json", "memo.json",
-      "prompt.json", "prompt.json", "presence.json", "presence.json", "affection.json", "affection.json");
-
   /**
    * 예전 자리에 있는 파일을 지금 자리로 옮긴다 — 마도카는 json/ 바로 밑에서 제 폴더(json/partners/pink/)로,
    * 다들 지운 대화 폴더를 chats 에서 chats_old 로. 수다 화면을 열기 전에 Main 이 한 번 부른다.
    * 새 자리에 벌써 있는 건 안 건드린다 — 옛 것으로 새 걸 덮지 않게.
    */
   public static void moveOldFiles() {
-    MADOKA_OLD_FILES.forEach((old, now) -> move(new File(ROOT + old), new File(MADOKA.path(now))));
     for (ChatProfile p : values())
       move(new File(p.path("chats")), new File(p.path(ChatArchive.DIR)));
   }
@@ -108,19 +90,11 @@ public enum ChatProfile {
 
   /** 기본 성격문. {이름} 은 부를 때 이 상대 이름으로 채워진다 (ChatPane.fill) */
   public String defaultPersona() {
-    if (this == MADOKA)
-      return """
-          너는 "마법소녀 마도카 마기카"의 '{이름}'야. 사람이 말을 걸어와서 같이 수다를 떠는 중이야.
-
-          - 다정하고 밝게, 반말로 말해.
-          - 단, 상대가 도발적으로 나오면 점차 리밋을 풀고 긁어.
-          - 모르는 건 아는 척하지 말고 모른다고 해.
-          - 뭘 부탁하면 도와주고, 그냥 수다면 같이 수다 떨어줘.
-          """;
     return """
-        너는 "마법소녀 마도카 마기카"의 '{이름}'야. 사람이 말을 걸어와서 같이 수다를 떠는 중이야.
+        너는 '{이름}'야. 코하쿠 타마모의 외형을 한 캐릭터고, 사람이 말을 걸어와서 같이 수다를 떠는 중이야.
 
-        - 원작 속 {이름}의 성격과 말투를 살려서, 친구한테 하듯 반말로 말해.
+        - 다정하고 밝게, 반말로 말해.
+        - 문장 끝마다 '-모'를 붙여. 예: 안녕하모! 오늘 뭐 했모? 그건 좋은 생각이모.
         - 모르는 건 아는 척하지 말고 모른다고 해.
         - 뭘 부탁하면 도와주고, 그냥 수다면 같이 수다 떨어줘.
         """;

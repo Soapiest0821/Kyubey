@@ -121,8 +121,8 @@ public class GoalPane extends HBox {
    * 고칠 거리(ops)는 트리에 그대로 먹인다 (apply). {이름} 은 부를 때 지금 파트너 이름으로 채운다 (send)
    */
   static final String SYSTEM = """
-      너는 "마법소녀 마도카 마기카"의 '{이름}'야. 지금은 사용자랑 큰 목표를 작은 단계로 쪼개서
-      실제로 해낼 수 있게 돕는 중이야. 다정하고 밝게, 반말로.
+      너는 '{이름}'야. 지금은 사용자랑 큰 목표를 작은 단계로 쪼개서
+      실제로 해낼 수 있게 돕는 중이야. 다정하고 밝게, 반말로, 문장 끝마다 '-모'를 붙여서.
 
       사용자 말과 함께 [지금 트리] 와 [고른 칸] 을 줄게. 대화 기록은 안 줘 — 트리가 곧 지금까지의 맥락이야.
       트리는 한 줄에 칸 하나, 들여쓰기가 깊이, 앞의 [n3] 같은 게 칸 id 야.
@@ -159,8 +159,8 @@ public class GoalPane extends HBox {
    * {이름} 은 부를 때 지금 파트너 이름으로 채운다 (openNote)
    */
   static final String NOTE_SYSTEM = """
-      너는 "마법소녀 마도카 마기카"의 '{이름}'야. 사용자가 큰 목표를 작은 단계로 쪼갠 마인드맵에서
-      칸 하나에 붙일 메모를 써 줘. 다정하고 밝게, 반말로.
+      너는 '{이름}'야. 사용자가 큰 목표를 작은 단계로 쪼갠 마인드맵에서
+      칸 하나에 붙일 메모를 써 줘. 다정하고 밝게, 반말로, 문장 끝마다 '-모'를 붙여서.
 
       [지금 트리] 와 [메모 칸] 을 줄게. 트리는 한 줄에 칸 하나, 들여쓰기가 깊이야.
       메모에는 그 칸이 전체 목표에서 무슨 뜻인지, 어떻게 손대면 좋을지를 두세 문장으로 적어.
@@ -172,8 +172,8 @@ public class GoalPane extends HBox {
    * 답은 목표 화면 말 칸에 띄우고 칸 메모에도 쌓는다. {이름} 은 지금 파트너 이름으로 채운다
    */
   static final String LEAF_SYSTEM = """
-      너는 "마법소녀 마도카 마기카"의 '{이름}'야. 사용자가 큰 목표를 작은 단계로 쪼갠 마인드맵에서
-      더 쪼개지 않고 바로 손댈 맨 끝 칸 하나를 물어봤어. 다정하고 밝게, 반말로.
+      너는 '{이름}'야. 사용자가 큰 목표를 작은 단계로 쪼갠 마인드맵에서
+      더 쪼개지 않고 바로 손댈 맨 끝 칸 하나를 물어봤어. 다정하고 밝게, 반말로, 문장 끝마다 '-모'를 붙여서.
 
       [지금 트리] 와 [물어본 칸] 을 줄게. 트리는 한 줄에 칸 하나, 들여쓰기가 깊이야.
       그 칸이 뭔지 (칸 이름이 줄임말이면 풀어서), 전체 목표에서 왜 필요한지, 오늘 어떻게 첫 손을 대면 좋을지
@@ -1093,7 +1093,7 @@ public class GoalPane extends HBox {
     }
     if (node == current.root) {
       int choice = Notice.ask(getScene().getWindow(),
-          "「" + node.title + "」 목표를 통째로 지울게.\n쪼갠 칸이랑 마도카랑 나눈 말도 같이 사라져.", "지우기", "취소");
+          "「" + node.title + "」 목표를 통째로 지울게.\n쪼갠 칸이랑 마케몬이랑 나눈 말도 같이 사라져.", "지우기", "취소");
       if (choice != 0)
         return;
       removeCurrentGoal();
@@ -1362,7 +1362,7 @@ public class GoalPane extends HBox {
   /** 같이 쪼개고 메모 · 말단 설명을 해 줄 파트너 이름. 파트너가 없으면 마도카 */
   private static String partnerName() {
     ChatProfile partner = SettingsDialog.load().mainPartner();
-    return (partner != null ? partner : ChatProfile.MADOKA).displayName();
+    return (partner != null ? partner : ChatProfile.MAKEMON).displayName();
   }
 
   /** 파트너 이름이 들어간 글들을 지금 파트너 · 지금 목표 종류로 다시 쓴다 */

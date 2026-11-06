@@ -1,5 +1,6 @@
 package kyubey.chat;
 
+import kyubey.core.AppPaths;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.File;
@@ -21,7 +22,7 @@ public final class BasePrompt {
       카톡처럼 짧게, 두세 문장. 줄바꿈 하나가 말풍선 하나라 결이 바뀔 때만 바꿔서 1~3줄로. 마크다운 금지.
       """;
 
-  public static final String PATH = "src/main/resources/json/prompt-base.json";
+  public static final String PATH = AppPaths.JSON + "prompt-base.json";
 
   /** 파일에 담기는 모양 */
   public static class Snapshot {

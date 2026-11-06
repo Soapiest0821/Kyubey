@@ -126,9 +126,8 @@ final class WebPicture {
       [사진 보내기]
       사진을 달라는 말이면("셀카 찍었어?"도) 답 끝에 표시 하나를 달아. 없으면 사진이 안 가. 장난이나 사진 얘기뿐이면 달지 마.
       - 실물: [[사진:영어 2~5단어|한글 설명]] 맨 앞은 대상 명사. 예: capybara swimming water
-      - 너(셀카 포함), 마마마 캐릭터: [[그림:태그|한글 설명]] 맨 앞은 캐릭터 태그. 얼굴이면 portrait 추가. 예: {나} portrait
-        태그: kaname_madoka akemi_homura tomoe_mami miki_sayaka sakura_kyouko kyubey
-      - "더 줘"는 앞 사진과 비슷한 걸로. 다른 작품이나 야한 그림은 표시 없이 네 말투로 넘겨. 앱, 검색, 만화 얘기는 꺼내지 마.
+      - 네 사진(셀카 포함)이나 캐릭터 그림은 없어. 표시 없이 네 말투로 넘겨.
+      - "더 줘"는 앞 사진과 비슷한 걸로. 야한 그림은 표시 없이 네 말투로 넘겨. 앱, 검색, 만화 얘기는 꺼내지 마.
       """;
 
   /**
@@ -191,7 +190,7 @@ final class WebPicture {
   private static final double MAX_RATIO = 2.5;
 
   /** 위키미디어는 클라이언트 이름을 밝히라고 한다 */
-  private static final String AGENT = "Kyubey/1.0 (desktop chat widget)";
+  private static final String AGENT = "Makeit/1.0 (desktop chat widget)";
 
   /** 이보다 좁은 그림은 말풍선에서 뭉개진다 */
   private static final int MIN_WIDTH = 640;
@@ -230,10 +229,7 @@ final class WebPicture {
   /** 이 상대의 그림 태그 */
   private static String characterTag(ChatProfile who) {
     return switch (who) {
-      case MADOKA -> "kaname_madoka";
-      case MAMI -> "tomoe_mami";
-      case SAYAKA -> "miki_sayaka";
-      case HOMURA -> "akemi_homura";
+      case MAKEMON -> "";
     };
   }
 
@@ -330,6 +326,9 @@ final class WebPicture {
   /** 맞는 사진을 한 장 받아 저장하고 파일 자리를 돌려준다. 없으면 null */
   private static String find(String query, boolean art, String dir, Set<String> sent, ChatProfile who)
       throws IOException, InterruptedException {
+    // Makeit 캐릭터는 검색할 그림 태그가 아직 없다. 찾으면 작품 태그(WORK) 때문에 마도카 그림이 온다
+    if (art)
+      return null;
     String words = query;
     for (int round = 0; round <= LOOSEN; round++) {
       List<Candidate> found = art ? searchArt(words, sent, who) : search(words, sent);

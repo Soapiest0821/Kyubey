@@ -1,5 +1,6 @@
 package kyubey.win;
 
+import kyubey.core.AppPaths;
 import com.sun.jna.Native;
 import com.sun.jna.WString;
 import com.sun.jna.platform.win32.Advapi32Util;
@@ -41,7 +42,7 @@ public final class WinNotify {
   private boolean broken;
 
   /** 알림 발신자를 가르는 ID. 아무 문자열이나 되지만 한 번 정하면 안 바꾸는 게 좋다 (알림 센터 설정이 이걸로 묶인다) */
-  private static final String APP_ID = "Kyubey.Madoka";
+  private static final String APP_ID = "Makeit.App";
 
   /** jna-platform 의 Shell32 는 버전 따라 들쭉날쭉해서 필요한 것만 직접 맵핑한다 */
   private interface Shell32 extends StdCallLibrary {
@@ -88,7 +89,7 @@ public final class WinNotify {
     if (image == null || base == null)
       return null;
     try {
-      Path file = Path.of(base, "Kyubey", "notify.png");
+      Path file = Path.of(AppPaths.ROOT, "notify.png");
       Files.createDirectories(file.getParent());
       ImageIO.write(image, "png", file.toFile());
       return file;

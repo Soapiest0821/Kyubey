@@ -1,5 +1,6 @@
 package kyubey.search;
 
+import kyubey.core.AppPaths;
 import kyubey.index.AppMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -25,15 +26,15 @@ public class MacroManager {
     public String cmd;
   }
 
-  private static final String ALIASES_JSON_PATH = "src/main/resources/json/aliases.json";
-  private static final String TOP_JSON_PATH = "src/main/resources/json/top.json";
-  private static final String APPS_JSON_PATH = "src/main/resources/json/apps.json";
-  private static final String EDITORS_JSON_PATH = "src/main/resources/json/editors.json";
-  private static final String SITES_JSON_PATH = "src/main/resources/json/sites.json";
+  private static final String ALIASES_JSON_PATH = AppPaths.JSON + "aliases.json";
+  private static final String TOP_JSON_PATH = AppPaths.JSON + "top.json";
+  private static final String APPS_JSON_PATH = AppPaths.JSON + "apps.json";
+  private static final String EDITORS_JSON_PATH = AppPaths.JSON + "editors.json";
+  private static final String SITES_JSON_PATH = AppPaths.JSON + "sites.json";
   // 검색 주소 없이 열기만 하는 사이트 — 내 것이라 저장소엔 안 올린다
-  private static final String BOOKMARKS_JSON_PATH = "src/main/resources/json/bookmarks.json";
-  private static final String CMDS_JSON_PATH = "src/main/resources/json/cmds.json";
-  private static final String INSTALLED_JSON_PATH = "src/main/resources/json/installed.json";
+  private static final String BOOKMARKS_JSON_PATH = AppPaths.JSON + "bookmarks.json";
+  private static final String CMDS_JSON_PATH = AppPaths.JSON + "cmds.json";
+  private static final String INSTALLED_JSON_PATH = AppPaths.JSON + "installed.json";
 
   private Map<String, AliasEntry> aliases;
   private Map<String, List<String>> commands;

@@ -56,7 +56,7 @@ final class GoalNoteDialog {
     area.setWrapText(true);
     area.setPrefColumnCount(30);
     area.setPrefRowCount(6);
-    area.setPromptText(generate == null ? "아직 메모가 없어. 눌러서 적어줘" : "아직 메모가 없어. 쪼개면 마도카가 한 말이 여기 적혀");
+    area.setPromptText(generate == null ? "아직 메모가 없어. 눌러서 적어줘" : "아직 메모가 없어. 쪼개면 마케몬이 한 말이 여기 적혀");
     area.setEditable(false);
     // 눌러야 고칠 수 있다. 포커스는 Ime 로 줘야 한글 조합이 보인다
     area.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {

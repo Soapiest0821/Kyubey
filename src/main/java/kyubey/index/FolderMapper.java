@@ -1,5 +1,6 @@
 package kyubey.index;
 
+import kyubey.core.AppPaths;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import java.io.File;
@@ -15,7 +16,7 @@ import java.util.*;
 public class FolderMapper {
 
   /** 저장할 JSON 파일 경로 */
-  public static final String OUTPUT_JSON_PATH = "src/main/resources/json/dirs.json";
+  public static final String OUTPUT_JSON_PATH = AppPaths.JSON + "dirs.json";
 
   /**
    * 고른 뿌리 폴더들 밑의 폴더를 전부 훑어서 "폴더 이름 → 경로들" 로 dirs.json 에 적는다.

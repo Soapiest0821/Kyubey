@@ -1,5 +1,6 @@
 package kyubey.llm;
 
+import kyubey.core.AppPaths;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,7 +26,7 @@ import java.util.Map;
  */
 public final class KeyHealth {
 
-  private static final String PATH = "src/main/resources/json/keys.json";
+  private static final String PATH = AppPaths.JSON + "keys.json";
 
   public enum State {
     /** 마지막에 답을 받았다 */

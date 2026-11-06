@@ -88,11 +88,11 @@ import java.util.regex.Pattern;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public final class SettingsDialog {
 
-  private static final String PATH = "src/main/resources/json/settings.json";
+  private static final String PATH = AppPaths.JSON + "settings.json";
   private static final String STYLE = "/style/style.css";
 
   /** 아무것도 안 골랐을 때 서는 그림 */
-  private static final String DEFAULT_MASCOT = "/img/마도카.png";
+  private static final String DEFAULT_MASCOT = "/img/마케몬.png";
 
   /** 그림을 세우는 키 */
   public static final double MASCOT_HEIGHT = 170;
@@ -284,7 +284,7 @@ public final class SettingsDialog {
   @JsonProperty("mascotImage")
   private void setLegacyMascot(String path) {
     if (path != null)
-      mascotImages.putIfAbsent(ChatProfile.MADOKA.id, path);
+      mascotImages.putIfAbsent(ChatProfile.MAKEMON.id, path);
   }
 
   @JsonProperty("partner")
@@ -475,7 +475,7 @@ public final class SettingsDialog {
       }
       System.err.println("[mascot] " + path + " 를 못 읽었어");
     }
-    if (profile != ChatProfile.MADOKA)
+    if (profile != ChatProfile.MAKEMON)
       return null;
     if (defaultMascot == null) {
       var stream = SettingsDialog.class.getResourceAsStream(DEFAULT_MASCOT);
@@ -681,7 +681,7 @@ public final class SettingsDialog {
         fitWidth.add(p);
 
     Label mascotHint = new Label("수다 화면 밖에선 파트너(없으면 위에서 고른 캐릭터), 수다 화면에선 지금 얘기하는 상대의 그림이 서. "
-        + "그림을 안 고른 상대는 안 띄우고, 마도카만 기본 그림이 있어.");
+        + "그림을 안 고르면 기본 그림을 세워. 기본 그림이 없으면 안 띄워.");
     mascotHint.getStyleClass().add("dialog-path-label");
     mascotHint.setWrapText(true);
 
@@ -715,7 +715,7 @@ public final class SettingsDialog {
         Image image = mascotImage(p, file);
         boolean wide = widerThanDefault(image);
         preview.setImage(image);
-        String where = file != null ? file : p == ChatProfile.MADOKA ? "기본 그림" : "없음 — 안 띄워";
+        String where = file != null ? file : p == ChatProfile.MAKEMON ? "기본 그림" : "없음 — 안 띄워";
         path.setText(wide ? where + "\n" + (fitWidth.contains(p) ? "가로에 맞춤" : "왼쪽으로 넓게") : where);
         clear.setDisable(file == null);
         fit.setDisable(!wide);

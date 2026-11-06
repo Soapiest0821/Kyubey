@@ -1,5 +1,6 @@
 package kyubey.goal;
 
+import kyubey.core.AppPaths;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,7 +21,7 @@ import java.util.UUID;
  */
 public final class GoalStore {
 
-  public static final String PATH = "src/main/resources/json/goals.json";
+  public static final String PATH = AppPaths.JSON + "goals.json";
 
   /** 목표 쪼개기 — 맨 위 칸에서 아래로 쪼개 나가는 트리. kind 가 없으면 이거 (전에 적은 목표들) */
   public static final String TREE = "tree";

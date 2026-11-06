@@ -1,5 +1,6 @@
 package kyubey.index;
 
+import kyubey.core.AppPaths;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
@@ -28,7 +29,7 @@ public class AppMapper {
 
   public static final String UWP_PREFIX = "shell:AppsFolder\\";
 
-  private static final String INSTALLED_JSON_PATH = "src/main/resources/json/installed.json";
+  private static final String INSTALLED_JSON_PATH = AppPaths.JSON + "installed.json";
 
   /** 앱이 아니라 곁다리(제거 프로그램, 설명서 같은 것)인 바로가기 걸러내기 */
   private static final Pattern NOISE = Pattern.compile(

@@ -1,5 +1,7 @@
 package kyubey;
 
+import kyubey.core.Updater;
+import kyubey.core.AppPaths;
 import kyubey.capture.Capture;
 import kyubey.search.Builtin;
 import kyubey.todo.AuroraTodos;
@@ -209,7 +211,7 @@ public class Main extends Application {
   private boolean reserveEmptyMascot;
 
   /** 위젯 창 제목. 작업 표시줄에 뜨고, Foreground 가 창을 찾을 때도 쓴다 */
-  private static final String TITLE = "Kyubey";
+  private static final String TITLE = "Makeit";
 
   /** Win+Alt+Space 가 실제로 걸렸는지. 못 걸었으면 Esc 를 숨기기로 쓰면 안 된다 */
   private boolean hotkeyReady;
@@ -250,7 +252,7 @@ public class Main extends Application {
     ChatProfile.moveOldFiles();
 
     macro = new MacroManager(DIRS_JSON_PATH);
-    history = new HistoryManager("src/main/resources/json/history.json");
+    history = new HistoryManager(AppPaths.JSON + "history.json");
     // 처음 켠 날에도 /top 이 빈손이 아니게, 예전부터 세어 둔 top.json 을 한 번 옮겨 깐다
     history.seedFrom(macro.getFrequencyData());
 
@@ -787,6 +789,7 @@ public class Main extends Application {
     stage.widthProperty().addListener(resized);
     stage.heightProperty().addListener(resized);
     stage.show();
+    Updater.check(stage);
     // 처음 뜰 때도 설정대로 띄운다 — 오로라거나 (단축키로 열 화면), 기본 위젯을 전체화면으로 (다시 열 때는 reveal)
     if (look.hotkeyAurora()) {
       aurora = true;
@@ -1707,6 +1710,18 @@ public class Main extends Application {
    * restart.bat 이, 빌드가 엎어졌을 때 알리는 건 restart.vbs 가 맡는다.
    */
   private void restart() {
+    if (Updater.packaged()) {
+      try {
+        Updater.relaunch();
+        System.exit(0);
+      } catch (IOException ex) {
+        ex.printStackTrace();
+        inputField.clear();
+        inputField.setPromptText("재시작에 실패했어: " + ex.getMessage());
+      }
+      return;
+    }
+
     File vbs = new File(System.getProperty("user.dir"), "restart.vbs");
     if (!vbs.isFile())
       vbs = new File(PROJECT_DIR, "restart.vbs");
@@ -1825,7 +1840,7 @@ public class Main extends Application {
 
   public static void main(String[] args) {
     // 윈도우 알림 머리에 "OpenJDK Platform Binary" 대신 Kyubey Chat 이 뜨게 (창을 띄우기 전에 해야 먹는다)
-    WinNotify.register("Kyubey Chat");
+    WinNotify.register("Makeit");
     launch(args);
   }
 }

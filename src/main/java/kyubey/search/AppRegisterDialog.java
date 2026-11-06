@@ -1,5 +1,6 @@
 package kyubey.search;
 
+import kyubey.core.AppPaths;
 import kyubey.core.SettingsDialog;
 import kyubey.index.AppMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -50,12 +51,12 @@ import kyubey.ui.WindowDrag;
  */
 public class AppRegisterDialog {
 
-  private static final String APPS_JSON_PATH = "src/main/resources/json/apps.json";
-  private static final String SITES_JSON_PATH = "src/main/resources/json/sites.json";
-  private static final String BOOKMARKS_JSON_PATH = "src/main/resources/json/bookmarks.json";
-  private static final String CMDS_JSON_PATH = "src/main/resources/json/cmds.json";
-  private static final String ALIASES_JSON_PATH = "src/main/resources/json/aliases.json";
-  private static final String INSTALLED_JSON_PATH = "src/main/resources/json/installed.json";
+  private static final String APPS_JSON_PATH = AppPaths.JSON + "apps.json";
+  private static final String SITES_JSON_PATH = AppPaths.JSON + "sites.json";
+  private static final String BOOKMARKS_JSON_PATH = AppPaths.JSON + "bookmarks.json";
+  private static final String CMDS_JSON_PATH = AppPaths.JSON + "cmds.json";
+  private static final String ALIASES_JSON_PATH = AppPaths.JSON + "aliases.json";
+  private static final String INSTALLED_JSON_PATH = AppPaths.JSON + "installed.json";
 
   // aliases.json 의 type 값 — Resolver 가 이 문자열로 별칭을 갈라본다
   private static final String TYPE_APP = "app";

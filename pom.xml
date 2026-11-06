@@ -5,8 +5,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.example</groupId>
-    <artifactId>kyubey</artifactId>
-    <version>4.3.0</version>
+    <artifactId>makeit</artifactId>
+    <version>1.0.0</version>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
@@ -52,28 +52,38 @@
     </dependencies>
 
     <build>
+        <finalName>makeit</finalName>
         <!-- .gitignore 로 빼둔 내 기록/설정/토큰은 jar 에도 안 넣는다 (앱은 파일 경로로 직접 읽어서 상관없다) -->
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
                 <excludes>
-                    <exclude>json/todomate.json</exclude>
-                    <exclude>json/chat.json</exclude>
-                    <exclude>json/chats/**</exclude>
-                    <exclude>json/memo.json</exclude>
-                    <exclude>json/presence.json</exclude>
-                    <exclude>json/history.json</exclude>
-                    <exclude>json/top.json</exclude>
-                    <exclude>json/installed.json</exclude>
-                    <exclude>json/dirs.json</exclude>
-                    <exclude>json/keys.json</exclude>
-                    <exclude>json/bookmarks.json</exclude>
-                    <exclude>json/apps.json</exclude>
-                    <exclude>json/cmds.json</exclude>
-                    <exclude>json/aliases.json</exclude>
-                    <exclude>json/settings.json</exclude>
-                    <exclude>json/prompt.json</exclude>
+                    <!-- 사용자 기록과 다른 캐릭터 그림은 배포본에 넣지 않는다 -->
+                    <exclude>json/**</exclude>
+                    <exclude>img/마도카.png</exclude>
+                    <exclude>img/봇치.png</exclude>
+                    <exclude>version.properties</exclude>
                 </excludes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <includes>
+                    <include>json/sites.json</include>
+                    <include>json/editors.json</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>version.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>.</directory>
+                <includes>
+                    <include>PATCHNOTES.md</include>
+                </includes>
             </resource>
         </resources>
         <plugins>
@@ -101,7 +111,7 @@
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>kyubey.Main</mainClass>
+                                    <mainClass>kyubey.Launcher</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>

@@ -1,0 +1,49 @@
+name: Makeit release
+
+on:
+  push:
+    tags:
+      - 'makeit-v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Check tag matches pom version
+        shell: pwsh
+        run: |
+          [xml]$pom = Get-Content -Raw -Encoding UTF8 pom.xml
+          $expected = "makeit-v$($pom.project.version)"
+          if ($env:GITHUB_REF_NAME -ne $expected) {
+            throw "태그($env:GITHUB_REF_NAME)와 pom.xml 버전($expected)이 달라"
+          }
+
+      - name: Install WiX 3
+        shell: pwsh
+        run: |
+          choco install wixtoolset --no-progress -y
+          $wix = (Get-ChildItem "C:\Program Files (x86)\WiX Toolset v3*\bin" | Select-Object -First 1).DirectoryName
+          Add-Content $env:GITHUB_PATH $wix
+
+      - name: Build MSI
+        shell: pwsh
+        run: .\packaging\build.ps1 -Type msi
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME (Get-ChildItem target\dist\Makeit-*.msi*).FullName `
+            --title "Makeit $env:GITHUB_REF_NAME" --notes "Makeit 업데이트" --target $env:GITHUB_SHA

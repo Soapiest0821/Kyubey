@@ -1,5 +1,6 @@
 package kyubey.todo;
 
+import kyubey.core.AppPaths;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -26,7 +27,7 @@ import java.util.UUID;
  */
 public final class TodoStore {
 
-  public static final String DIR = "src/main/resources/json/todo";
+  public static final String DIR = AppPaths.JSON + "todo";
 
   /** 하루가 바뀌는 시각 — 아침 여섯 시. 그 전까지는 아직 어제다 */
   public static final int DAY_STARTS_AT = 6;

@@ -19,8 +19,6 @@ import javafx.stage.Window;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 /**
  * /patch 로 여는 패치 노트 창. 루트의 PATCHNOTES.md 를 그대로 읽어 MarkdownView 로 그린다 —
@@ -94,7 +92,11 @@ public final class PatchNotesDialog {
   /** 파일이 없거나 못 읽으면 창은 그대로 띄우고 왜 비었는지만 적는다 */
   private static String read() {
     try {
-      return Files.readString(Path.of(PATH), StandardCharsets.UTF_8);
+      try (var in = PatchNotesDialog.class.getResourceAsStream("/" + PATH)) {
+        if (in == null)
+          throw new IOException(PATH);
+        return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+      }
     } catch (IOException e) {
       return "패치 노트를 못 읽었어 (" + PATH + ")";
     }

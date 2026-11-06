@@ -59,15 +59,15 @@ public final class MascotFitDialog {
     Label title = new Label("🖼 " + name + " 그림 크기");
     title.getStyleClass().add("notice-title");
 
-    Label body = new Label("기본 마도카보다 옆으로 넓은 그림이야. 어떻게 세울까?\n점선이 기본 마도카 자리야.");
+    Label body = new Label("기본 그림보다 옆으로 넓은 그림이야. 어떻게 세울까?\n점선이 기본 그림 자리야.");
     body.getStyleClass().add("notice-message");
     body.setWrapText(true);
 
     Boolean[] picked = { null };
     Button width = card(image, true, "가로에 맞추기",
-        "마도카 너비 안에 쏙. 대신 키가 작아져", current);
+        "기본 너비 안에 쏙. 대신 키가 작아져", current);
     Button height = card(image, false, "왼쪽으로 넓게",
-        "마도카 키 그대로. 넘치는 만큼 왼쪽을 가려", !current);
+        "기본 키 그대로. 넘치는 만큼 왼쪽을 가려", !current);
     width.setOnAction(e -> {
       picked[0] = true;
       popup.close();

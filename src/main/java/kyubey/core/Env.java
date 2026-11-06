@@ -110,7 +110,7 @@ public final class Env {
    */
   public static List<Path> homes() {
     List<Path> homes = new ArrayList<>();
-    homes.add(Paths.get(System.getProperty("user.dir")));
+    homes.add(Paths.get(AppPaths.ROOT));
 
     Path jarDir = jarDirectory();
     if (jarDir != null) {

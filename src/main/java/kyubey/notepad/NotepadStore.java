@@ -1,5 +1,6 @@
 package kyubey.notepad;
 
+import kyubey.core.AppPaths;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -15,7 +16,7 @@ import java.util.UUID;
  */
 public final class NotepadStore {
 
-  public static final String PATH = "src/main/resources/json/notepad.json";
+  public static final String PATH = AppPaths.JSON + "notepad.json";
 
   /** 메모 한 장. 첫 줄이 곧 목록에 뜨는 이름이다 */
   @JsonIgnoreProperties(ignoreUnknown = true)
